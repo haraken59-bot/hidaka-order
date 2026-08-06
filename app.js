@@ -8,6 +8,7 @@
   const MOOD_LABEL = { pork: '豚', chicken: '鶏', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの' };
   const TAG_LABEL = { pork: '豚', chicken: '鶏', beef: '牛', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの', light: '軽め', drink: '飲み物', finish: '締め', rice: 'ご飯', noodle: '麺', soup: '汁物', dessert: 'デザート', sweet: '甘いもの', alcohol: 'アルコール', nonalcohol: 'ノンアルコール', shishito: 'ししとう' };
   const TAG_CANONICAL = { pork: 'pork', '豚': 'pork', chicken: 'chicken', '鶏': 'chicken', beef: 'beef', '牛': 'beef', seafood: 'seafood', '魚介': 'seafood', vegetable: 'vegetable', '野菜': 'vegetable', spicy: 'spicy', '辛いもの': 'spicy', light: 'light', '軽め': 'light', drink: 'drink', '飲み物': 'drink', finish: 'finish', '締め': 'finish', rice: 'rice', 'ご飯': 'rice', noodle: 'noodle', '麺': 'noodle', soup: 'soup', '汁物': 'soup', dessert: 'dessert', 'デザート': 'dessert', sweet: 'sweet', '甘いもの': 'sweet', alcohol: 'alcohol', 'アルコール': 'alcohol', nonalcohol: 'nonalcohol', 'ノンアルコール': 'nonalcohol', shishito: 'shishito', 'ししとう': 'shishito' };
+  const FOOD_MOOD_TAGS = new Set(['pork', 'chicken', 'beef', 'seafood', 'vegetable', 'spicy']);
   const KEEP_SHOCHU_FEE = { id: 'keep-shochu-fee', name: '割代（焼酎キープ）', price: 220, category: 'fee', tags: [], actual: true };
   const ORDER_BUDGET = 3000;
   const fallbackMenu = [
@@ -124,6 +125,7 @@
   function init() {
     $('#todayLabel').textContent = new Intl.DateTimeFormat('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' }).format(new Date());
     getTodayOutOfStockIds();
+    renderMoodChoices();
     applyPreferences();
     saveState();
     $('#preferenceForm').addEventListener('submit', event => { event.preventDefault(); currentOrder = createOrder(readPreferences()); renderOrder(currentOrder); });
@@ -139,6 +141,7 @@
     $('#addToOrderForm').addEventListener('submit', addItemToCurrentOrder);
     $('#cancelOrderAddition').addEventListener('click', () => $('#addToOrderDialog').close());
     $('#importFile').addEventListener('change', importFile);
+    $('#downloadCurrentMenu').addEventListener('click', downloadCurrentMenuBackup);
     $('#downloadMenuTemplate').addEventListener('click', downloadDefaultMenu);
     $('#downloadHistoryTemplate').addEventListener('click', () => download('hidaka-history-sample.csv', '日付,注文\n2026-08-01,ハイボール|酢モツ|ししとう串|手羽先\n'));
     $('#resetData').addEventListener('click', resetData);
@@ -157,6 +160,30 @@
     $('#mustShishito').checked = p.mustShishito;
     $('#wantFinish').checked = p.wantFinish;
     $('#avoidRecent').checked = p.avoidRecent;
+  }
+
+  function renderMoodChoices() {
+    const container = $('#moodChoices');
+    const selected = new Set(state.preferences?.moods || []);
+    const tags = new Map();
+    state.menu.forEach(item => item.tags.forEach(tag => {
+      const canonical = canonicalTag(tag);
+      if (!FOOD_MOOD_TAGS.has(canonical)) return;
+      const current = tags.get(canonical) || { label: localizeTag(tag), count: 0 };
+      current.count += 1;
+      tags.set(canonical, current);
+    }));
+    const choices = [...tags.entries()].sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label, 'ja')).slice(0, 5);
+    container.replaceChildren(...choices.map(([value, tagInfo]) => {
+      const label = document.createElement('label');
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.name = 'mood';
+      input.value = value;
+      input.checked = selected.has(value);
+      label.append(input, ` ${tagInfo.label}`);
+      return label;
+    }));
   }
 
   function readPreferences() {
@@ -278,7 +305,7 @@
   }
 
   function orderHeading(order) {
-    const mood = order.preferences.moods.map(value => MOOD_LABEL[value]).join('・');
+    const mood = order.preferences.moods.map(value => MOOD_LABEL[value] || TAG_LABEL[value] || value).join('・');
     const base = mood ? `${mood}気分のおすすめ` : order.preferences.hunger === 'light' ? '軽く一杯のおすすめ' : order.preferences.hunger === 'hearty' ? 'しっかり満足するおすすめ' : 'バランスのよいおすすめ';
     return `${base}（串 ${order.preferences.skewerCount}本）`;
   }
@@ -388,12 +415,12 @@
     if (!item) return;
     const index = state.menu.findIndex(menuItem => menuItem.id === item.id);
     if (index >= 0) state.menu[index] = item; else state.menu.push(item);
-    saveState(); renderMenuEditor(); renderDrinkOptions(); $('#menuItemDialog').close();
+    saveState(); renderMenuEditor(); renderDrinkOptions(); renderMoodChoices(); $('#menuItemDialog').close();
   }
   function deleteMenuItem(item) {
     if (!confirm(`「${item.name}」をメニューから削除しますか？`)) return;
     state.menu = state.menu.filter(menuItem => menuItem.id !== item.id);
-    saveState(); renderMenuEditor(); renderDrinkOptions();
+    saveState(); renderMenuEditor(); renderDrinkOptions(); renderMoodChoices();
   }
 
   async function importFile(event) {
@@ -406,7 +433,7 @@
       const requestedTarget = $('#importTarget').value;
       const mode = $('input[name="importMode"]:checked').value;
       const result = mergeImportedData(data, requestedTarget, mode);
-      saveState(); renderMenuEditor(); renderDrinkOptions(); renderHistorySummary();
+      saveState(); renderMenuEditor(); renderDrinkOptions(); renderMoodChoices(); renderHistorySummary();
       status.textContent = `${result}を読み込みました。`;
     } catch (error) { status.textContent = `読み込めませんでした: ${error.message}`; }
     event.target.value = '';
@@ -459,6 +486,19 @@
     link.href = URL.createObjectURL(new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8' }));
     link.download = filename; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
+  function csvCell(value) {
+    const text = String(value ?? '');
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+  function downloadCurrentMenuBackup() {
+    const rows = [
+      ['料理名', '価格', '分類', 'タグ', '実額'],
+      ...state.menu.map(item => [item.name, item.price, item.category, item.tags.join('|'), item.actual])
+    ];
+    const csv = `${rows.map(row => row.map(csvCell).join(',')).join('\n')}\n`;
+    download(`やきとり日高_メニューバックアップ_${todayKey()}.csv`, csv);
+    $('#importStatus').textContent = `現在のメニュー ${state.menu.length}品をCSVに保存しました。`;
+  }
   async function downloadDefaultMenu() {
     try {
       const response = await fetch('./data/hidaka-menu.csv', { cache: 'no-cache' });
@@ -472,7 +512,7 @@
     if (!confirm('メニューを登録済みの初期メニューへ戻し、注文履歴と設定を初期化しますか？')) return;
     const base = defaultState();
     const initialMenu = cloneMenu(state.initialMenu?.length ? state.initialMenu : base.initialMenu);
-    state = { ...base, menu: initialMenu, initialMenu: cloneMenu(initialMenu) }; currentOrder = null; saveState(); applyPreferences(); renderMenuEditor(); renderHistorySummary();
+    state = { ...base, menu: initialMenu, initialMenu: cloneMenu(initialMenu) }; currentOrder = null; saveState(); renderMoodChoices(); applyPreferences(); renderMenuEditor(); renderHistorySummary();
     $('#dataDialog').close();
     $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>空腹度・気分から、バランスよく選びます。</p></div>';
   }

@@ -62,14 +62,8 @@
         </fieldset>
 
         <fieldset class="field-group">
-          <legend>今日の気分 <span class="optional">複数選択可</span></legend>
-          <div class="tag-choices">
-            <label><input type="checkbox" name="mood" value="pork" /> 豚</label>
-            <label><input type="checkbox" name="mood" value="chicken" /> 鶏</label>
-            <label><input type="checkbox" name="mood" value="seafood" /> 魚介</label>
-            <label><input type="checkbox" name="mood" value="vegetable" /> 野菜</label>
-            <label><input type="checkbox" name="mood" value="spicy" /> 辛いもの</label>
-          </div>
+          <legend>今日の気分 <span class="optional">登録が多い食べ物5種・複数選択可</span></legend>
+          <div class="tag-choices" id="moodChoices"></div>
         </fieldset>
 
         <div class="toggle-list">
@@ -118,6 +112,7 @@
           </div>
           <p class="import-status" id="importStatus"></p>
           <div class="text-button-row">
+            <button type="button" class="text-button" id="downloadCurrentMenu">現在のメニューをバックアップ</button>
             <button type="button" class="text-button" id="downloadMenuTemplate">基本メニューCSVを保存</button>
             <button type="button" class="text-button" id="downloadHistoryTemplate">履歴CSV見本</button>
           </div>
