@@ -1,0 +1,27 @@
+{
+  "id": "./",
+  "name": "日高オーダー",
+  "short_name": "日高オーダー",
+  "description": "やきとり日高での注文を、気分から提案するアプリ",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f0e7",
+  "theme_color": "#b52a22",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

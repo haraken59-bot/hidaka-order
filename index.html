@@ -5,7 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#b52a22" />
     <meta name="description" content="やきとり日高での注文を、気分から提案するアプリ" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="日高オーダー" />
     <title>日高オーダー</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon-192.png" type="image/png" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -17,7 +24,10 @@
           <h1>日高オーダー</h1>
         </div>
       </div>
-      <button class="icon-button" id="dataButton" type="button" aria-label="データ管理を開く">⚙</button>
+      <div class="header-actions">
+        <button class="install-button" id="installButton" type="button" hidden>インストール</button>
+        <button class="icon-button" id="dataButton" type="button" aria-label="データ管理を開く">⚙</button>
+      </div>
     </header>
 
     <main class="page-shell">

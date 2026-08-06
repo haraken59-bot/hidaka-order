@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="日高オーダー">
+  <rect width="512" height="512" fill="#b52a22"/>
+  <circle cx="256" cy="256" r="168" fill="#fff8ea"/>
+  <rect x="166" y="132" width="180" height="248" rx="18" fill="#b52a22"/>
+  <rect x="198" y="170" width="116" height="172" rx="7" fill="#fff8ea"/>
+  <rect x="198" y="244" width="116" height="24" fill="#b52a22"/>
+</svg>

@@ -456,5 +456,47 @@
     $('#initialDataStatus').textContent = `${state.initialMenu.length}品を初期メニューとして登録しました。`;
   }
 
+  let deferredInstallPrompt = null;
+
+  function setupInstallPrompt() {
+    const installButton = $('#installButton');
+    if (!installButton) return;
+
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+      installButton.hidden = true;
+      return;
+    }
+
+    window.addEventListener('beforeinstallprompt', event => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      installButton.hidden = false;
+    });
+
+    installButton.addEventListener('click', async () => {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      installButton.hidden = true;
+    });
+
+    window.addEventListener('appinstalled', () => {
+      deferredInstallPrompt = null;
+      installButton.hidden = true;
+    });
+  }
+
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./service-worker.js').catch(error => {
+        console.warn('Service Workerを登録できませんでした。', error);
+      });
+    });
+  }
+
   init();
+  setupInstallPrompt();
+  registerServiceWorker();
 })();
