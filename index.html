@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#b52a22" />
+    <meta name="description" content="やきとり日高での注文を、気分から提案するアプリ" />
+    <title>日高オーダー</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">日</span>
+        <div>
+          <p class="eyebrow">やきとり日高 専用</p>
+          <h1>日高オーダー</h1>
+        </div>
+      </div>
+      <button class="icon-button" id="dataButton" type="button" aria-label="データ管理を開く">⚙</button>
+    </header>
+
+    <main class="page-shell">
+      <section class="intro">
+        <p class="today" id="todayLabel"></p>
+        <h2>今日は何を頼む？</h2>
+        <p>気分に合わせて、頼む順番まで組み立てます。</p>
+      </section>
+
+      <form id="preferenceForm" class="panel preferences">
+        <fieldset class="field-group">
+          <legend>お腹の空き具合</legend>
+          <div class="choice-row" id="hungerChoices">
+            <label><input type="radio" name="hunger" value="light" /> 軽め</label>
+            <label><input type="radio" name="hunger" value="normal" checked /> 普通</label>
+            <label><input type="radio" name="hunger" value="hearty" /> がっつり</label>
+          </div>
+        </fieldset>
+
+        <div class="field-group">
+          <label for="skewerCount">串物の本数 <span class="optional">ししとうも1本として数えます</span></label>
+          <div class="budget-control">
+            <input id="skewerCount" name="skewerCount" type="range" min="0" max="10" step="1" value="3" />
+            <output id="skewerCountOutput" for="skewerCount">3本</output>
+          </div>
+        </div>
+
+        <fieldset class="field-group">
+          <legend>最初の飲み物</legend>
+          <select id="drink" class="drink-select" aria-label="最初の飲み物を選ぶ"></select>
+          <p class="field-help">焼酎キープの割代 ¥220 は毎回、注文の最後に固定で加算されます。</p>
+        </fieldset>
+
+        <fieldset class="field-group">
+          <legend>今日の気分 <span class="optional">複数選択可</span></legend>
+          <div class="tag-choices">
+            <label><input type="checkbox" name="mood" value="pork" /> 豚</label>
+            <label><input type="checkbox" name="mood" value="chicken" /> 鶏</label>
+            <label><input type="checkbox" name="mood" value="seafood" /> 魚介</label>
+            <label><input type="checkbox" name="mood" value="vegetable" /> 野菜</label>
+            <label><input type="checkbox" name="mood" value="spicy" /> 辛いもの</label>
+          </div>
+        </fieldset>
+
+        <div class="toggle-list">
+          <label class="toggle"><input id="mustShishito" type="checkbox" checked /><span></span>ししとうを必ず入れる</label>
+          <label class="toggle"><input id="wantFinish" type="checkbox" /><span></span>締めを入れる</label>
+          <label class="toggle"><input id="avoidRecent" type="checkbox" checked /><span></span>最近食べたものを避ける</label>
+        </div>
+
+        <button class="primary-button" type="submit">この条件で注文を考える <span>→</span></button>
+      </form>
+
+      <section id="result" class="result-section" aria-live="polite">
+        <div class="empty-state">
+          <span class="empty-illustration">🍢</span>
+          <h2>条件を選んで注文案を作ろう</h2>
+          <p>空腹度・気分から、バランスよく選びます。</p>
+        </div>
+      </section>
+
+      <section class="history-summary" id="historySummary"></section>
+    </main>
+
+    <dialog id="dataDialog" class="data-dialog">
+      <form method="dialog" class="dialog-header">
+        <div>
+          <p class="eyebrow">端末内に保存されます</p>
+          <h2>メニュー・履歴の管理</h2>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="閉じる">×</button>
+      </form>
+      <div class="dialog-content">
+        <section class="data-section">
+          <h3>外部データを取り込む</h3>
+          <p>CSV または JSON のメニュー・注文履歴を読み込みます。</p>
+          <div class="import-grid">
+            <label class="file-label">ファイルを選ぶ<input id="importFile" type="file" accept=".csv,.json,application/json,text/csv" /></label>
+            <select id="importTarget" aria-label="取り込むデータの種類">
+              <option value="auto">ファイルから自動判定</option>
+              <option value="menu">メニューとして読み込む</option>
+              <option value="history">履歴として読み込む</option>
+            </select>
+          </div>
+          <div class="choice-row compact">
+            <label><input type="radio" name="importMode" value="append" checked /> 追加・更新</label>
+            <label><input type="radio" name="importMode" value="replace" /> すべて入れ替え</label>
+          </div>
+          <p class="import-status" id="importStatus"></p>
+          <div class="text-button-row">
+            <button type="button" class="text-button" id="downloadMenuTemplate">メニューCSV見本</button>
+            <button type="button" class="text-button" id="downloadHistoryTemplate">履歴CSV見本</button>
+          </div>
+        </section>
+
+        <section class="data-section">
+          <div class="section-title-row"><h3>メニュー <span id="menuCount"></span></h3><button class="text-button" type="button" id="addMenuItem">＋ 追加</button></div>
+          <div class="menu-editor" id="menuEditor"></div>
+        </section>
+
+        <section class="data-section danger-zone">
+          <h3>データの初期化</h3>
+          <p>「初期データに戻す」では、登録済みの初期メニューへ戻します。</p>
+          <button type="button" class="secondary-button" id="registerInitialMenu">現在のメニューを初期データに登録</button>
+          <p class="initial-data-status" id="initialDataStatus" aria-live="polite"></p>
+          <button type="button" class="danger-button" id="resetData">初期データに戻す</button>
+        </section>
+      </div>
+    </dialog>
+
+    <template id="menuRowTemplate">
+      <div class="menu-row">
+        <div><strong class="menu-name"></strong><small class="menu-meta"></small></div>
+        <div class="menu-row-actions"><button type="button" class="edit-menu-item">編集</button><button type="button" class="delete-menu-item" aria-label="削除">×</button></div>
+      </div>
+    </template>
+
+    <dialog id="menuItemDialog" class="item-dialog">
+      <form id="menuItemForm">
+        <h2 id="menuFormTitle">メニューを追加</h2>
+        <input id="itemId" type="hidden" />
+        <label>料理名<input id="itemName" required maxlength="40" /></label>
+        <label>価格（円）<input id="itemPrice" required type="number" min="0" step="1" /></label>
+        <label>分類
+          <select id="itemCategory">
+            <option value="drink">お酒</option><option value="small">小皿・つまみ</option><option value="skewer">串</option><option value="main">主菜</option><option value="finish">締め</option>
+          </select>
+        </label>
+        <label>タグ <small>例: 豚|軽め|辛いもの</small><input id="itemTags" placeholder="豚|軽め" /></label>
+        <label class="checkbox-line"><input id="itemActual" type="checkbox" /> 価格を実額として扱う</label>
+        <div class="form-actions"><button type="button" class="secondary-button" id="cancelMenuEdit">キャンセル</button><button class="primary-button" type="submit">保存</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="addToOrderDialog" class="item-dialog">
+      <form id="addToOrderForm">
+        <h2>メニューから追加</h2>
+        <p class="dialog-note">今回の注文にだけ商品を追加します。追加額は注文合計にのみ反映されます。</p>
+        <label>追加する商品<select id="additionalItem" required></select></label>
+        <p id="addOrderStatus" class="add-order-status" aria-live="polite"></p>
+        <div class="form-actions"><button type="button" class="secondary-button" id="cancelOrderAddition">キャンセル</button><button class="primary-button" id="confirmOrderAddition" type="submit">追加する</button></div>
+      </form>
+    </dialog>
+
+    <script src="app.js"></script>
+  </body>
+</html>
