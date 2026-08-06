@@ -2,13 +2,15 @@
   'use strict';
 
   const STORAGE_KEY = 'hidaka-order-v1';
-  const CATEGORY_LABEL = { drink: 'お酒', small: '小皿・つまみ', skewer: '串', main: '主菜', finish: '締め', fee: '割代' };
+  const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-06-v1';
+  const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
+  const CATEGORY_LABEL = { drink: 'お酒', small: '小皿・つまみ', skewer: '串', main: '主菜', finish: '締め', dessert: 'デザート', fee: '割代' };
   const MOOD_LABEL = { pork: '豚', chicken: '鶏', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの' };
-  const TAG_LABEL = { pork: '豚', chicken: '鶏', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの', light: '軽め', drink: '飲み物', finish: '締め', shishito: 'ししとう' };
-  const TAG_CANONICAL = { pork: 'pork', '豚': 'pork', chicken: 'chicken', '鶏': 'chicken', seafood: 'seafood', '魚介': 'seafood', vegetable: 'vegetable', '野菜': 'vegetable', spicy: 'spicy', '辛いもの': 'spicy', light: 'light', '軽め': 'light', drink: 'drink', '飲み物': 'drink', finish: 'finish', '締め': 'finish', shishito: 'shishito', 'ししとう': 'shishito' };
+  const TAG_LABEL = { pork: '豚', chicken: '鶏', beef: '牛', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの', light: '軽め', drink: '飲み物', finish: '締め', rice: 'ご飯', noodle: '麺', soup: '汁物', dessert: 'デザート', sweet: '甘いもの', alcohol: 'アルコール', nonalcohol: 'ノンアルコール', shishito: 'ししとう' };
+  const TAG_CANONICAL = { pork: 'pork', '豚': 'pork', chicken: 'chicken', '鶏': 'chicken', beef: 'beef', '牛': 'beef', seafood: 'seafood', '魚介': 'seafood', vegetable: 'vegetable', '野菜': 'vegetable', spicy: 'spicy', '辛いもの': 'spicy', light: 'light', '軽め': 'light', drink: 'drink', '飲み物': 'drink', finish: 'finish', '締め': 'finish', rice: 'rice', 'ご飯': 'rice', noodle: 'noodle', '麺': 'noodle', soup: 'soup', '汁物': 'soup', dessert: 'dessert', 'デザート': 'dessert', sweet: 'sweet', '甘いもの': 'sweet', alcohol: 'alcohol', 'アルコール': 'alcohol', nonalcohol: 'nonalcohol', 'ノンアルコール': 'nonalcohol', shishito: 'shishito', 'ししとう': 'shishito' };
   const KEEP_SHOCHU_FEE = { id: 'keep-shochu-fee', name: '割代（焼酎キープ）', price: 220, category: 'fee', tags: [], actual: true };
   const ORDER_BUDGET = 3000;
-  const defaultMenu = [
+  const fallbackMenu = [
     { id: 'highball', name: 'ハイボール', price: 380, category: 'drink', tags: ['drink', 'light'], actual: false },
     { id: 'beer', name: '生ビール（中）', price: 520, category: 'drink', tags: ['drink'], actual: false },
     { id: 'lemon-sour', name: 'レモンサワー', price: 390, category: 'drink', tags: ['drink', 'light'], actual: false },
@@ -37,12 +39,15 @@
     { id: 'ramen', name: '中華そば', price: 550, category: 'finish', tags: ['finish'], actual: false }
   ];
 
+  let defaultMenu = fallbackMenu;
+  let activeDefaultMenuVersion = FALLBACK_MENU_VERSION;
+
   function cloneMenu(menu) { return menu.map(item => ({ ...item, tags: [...item.tags] })); }
   function defaultState() {
     const menu = defaultMenu.map(item => ({ ...item, tags: item.tags.map(localizeTag) }));
-    return { menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', skewerCount: 3, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, outOfStock: { date: todayKey(), ids: [] } };
+    return { defaultMenuVersion: activeDefaultMenuVersion, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', skewerCount: 3, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, outOfStock: { date: todayKey(), ids: [] } };
   }
-  let state = loadState();
+  let state;
   let currentOrder = null;
 
   const $ = (selector, parent = document) => parent.querySelector(selector);
@@ -56,10 +61,25 @@
       if (!saved || !Array.isArray(saved.menu) || !Array.isArray(saved.history)) return defaultState();
       const base = defaultState();
       const outOfStock = saved.outOfStock && typeof saved.outOfStock.date === 'string' && Array.isArray(saved.outOfStock.ids) ? { date: saved.outOfStock.date, ids: saved.outOfStock.ids.map(String) } : base.outOfStock;
-      const menu = saved.menu.map(normalizeMenuItem).filter(Boolean);
-      const initialMenu = Array.isArray(saved.initialMenu) ? saved.initialMenu.map(normalizeMenuItem).filter(Boolean) : cloneMenu(menu);
-      return { ...base, ...saved, preferences: { ...base.preferences, ...(saved.preferences || {}) }, outOfStock, menu, initialMenu, history: saved.history.map(normalizeHistoryItem).filter(Boolean) };
+      const shouldInstallNewBaseMenu = saved.defaultMenuVersion !== activeDefaultMenuVersion;
+      const menu = shouldInstallNewBaseMenu ? cloneMenu(base.menu) : saved.menu.map(normalizeMenuItem).filter(Boolean);
+      const initialMenu = shouldInstallNewBaseMenu ? cloneMenu(base.initialMenu) : (Array.isArray(saved.initialMenu) ? saved.initialMenu.map(normalizeMenuItem).filter(Boolean) : cloneMenu(menu));
+      return { ...base, ...saved, defaultMenuVersion: activeDefaultMenuVersion, preferences: { ...base.preferences, ...(saved.preferences || {}) }, outOfStock, menu, initialMenu, history: saved.history.map(normalizeHistoryItem).filter(Boolean) };
     } catch { return defaultState(); }
+  }
+
+  async function loadDefaultMenu() {
+    try {
+      const response = await fetch('./data/hidaka-menu.csv', { cache: 'no-cache' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const rows = parseCsv(await response.text());
+      const menu = rows.map((row, index) => normalizeMenuItem({ ...row, id: `base-${String(index + 1).padStart(3, '0')}` })).filter(Boolean);
+      if (!menu.length) throw new Error('基本メニューが空です。');
+      return { menu, version: DEFAULT_MENU_VERSION };
+    } catch (error) {
+      console.warn('基本メニューCSVを読み込めないため、内蔵メニューを使います。', error);
+      return { menu: fallbackMenu, version: FALLBACK_MENU_VERSION };
+    }
   }
 
   function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
@@ -88,7 +108,7 @@
     const price = Number(raw.price ?? raw['価格'] ?? raw['値段']);
     if (!name || !Number.isFinite(price) || price < 0) return null;
     const categoryValue = String(raw.category ?? raw['分類'] ?? 'small').toLowerCase();
-    const categoryMap = { 'お酒': 'drink', '飲み物': 'drink', '小皿': 'small', '小皿・つまみ': 'small', 'つまみ': 'small', '串': 'skewer', '焼き鳥': 'skewer', '主菜': 'main', '締め': 'finish', 'ご飯': 'finish' };
+    const categoryMap = { 'お酒': 'drink', '飲み物': 'drink', '小皿': 'small', '小皿・つまみ': 'small', 'つまみ': 'small', '串': 'skewer', '焼き鳥': 'skewer', '主菜': 'main', '締め': 'finish', 'ご飯': 'finish', 'デザート': 'dessert', '甘味': 'dessert' };
     const category = CATEGORY_LABEL[categoryValue] ? categoryValue : (categoryMap[categoryValue] || 'small');
     const actualValue = raw.actual ?? raw['実額'] ?? raw['実売価格'];
     return { id: String(raw.id || raw['ID'] || uid()), name, price: Math.round(price), category, tags: normalizeTags(raw.tags ?? raw['タグ']), actual: actualValue === true || String(actualValue).toLowerCase() === 'true' || String(actualValue) === '1' };
@@ -119,7 +139,7 @@
     $('#addToOrderForm').addEventListener('submit', addItemToCurrentOrder);
     $('#cancelOrderAddition').addEventListener('click', () => $('#addToOrderDialog').close());
     $('#importFile').addEventListener('change', importFile);
-    $('#downloadMenuTemplate').addEventListener('click', () => download('hidaka-menu-sample.csv', '料理名,価格,分類,タグ,実額\nししとう串,180,skewer,野菜|軽め,false\nゴマサバ,680,small,魚介,true\n'));
+    $('#downloadMenuTemplate').addEventListener('click', downloadDefaultMenu);
     $('#downloadHistoryTemplate').addEventListener('click', () => download('hidaka-history-sample.csv', '日付,注文\n2026-08-01,ハイボール|酢モツ|ししとう串|手羽先\n'));
     $('#resetData').addEventListener('click', resetData);
     $('#registerInitialMenu').addEventListener('click', registerInitialMenu);
@@ -241,13 +261,13 @@
     const baseCount = p.hunger === 'light' ? 1 : p.hunger === 'normal' ? 1 : 2;
     const minimum = 1 + (selected.some(item => item.category === 'drink') ? 1 : 0) + baseCount + p.skewerCount + (p.wantFinish ? 1 : 0);
     while (selected.length < minimum) {
-      let fallbackOptions = candidates(null).filter(item => !['skewer', 'drink', 'fee'].includes(item.category) && item.price <= remaining());
+      let fallbackOptions = candidates(null).filter(item => !['skewer', 'drink', 'dessert', 'fee'].includes(item.category) && item.price <= remaining());
       if (p.avoidRecent) { const fresh = fallbackOptions.filter(item => !recent.has(item.name)); if (fresh.length) fallbackOptions = fresh; }
       const fallback = fallbackOptions.sort((a, b) => score(b, 'fallback') - score(a, 'fallback'))[0];
       if (!fallback) break;
       add(fallback);
     }
-    selected.sort((a, b) => ({ drink: 1, small: 2, skewer: 3, main: 4, finish: 5, fee: 6 }[a.category] - { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, fee: 6 }[b.category]));
+    selected.sort((a, b) => ({ drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 }[a.category] - { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 }[b.category]));
     const total = selected.reduce((sum, item) => sum + item.price, 0);
     const actualSkewerCount = selected.filter(item => item.category === 'skewer').length;
     if (actualSkewerCount < p.skewerCount) unavailable.push(`串物は希望の ${p.skewerCount}本に届かず、${actualSkewerCount}本までとなりました。`);
@@ -321,7 +341,7 @@
     if (!currentOrder) return;
     const item = state.menu.find(menuItem => menuItem.id === $('#additionalItem').value);
     if (!item || getTodayOutOfStockIds().includes(item.id)) { $('#addOrderStatus').textContent = 'この商品は品切れのため追加できません。'; return; }
-    const priority = { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, fee: 6 };
+    const priority = { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 };
     const items = [...currentOrder.items, item].sort((a, b) => priority[a.category] - priority[b.category]);
     currentOrder = { ...currentOrder, items, total: currentOrder.total + item.price };
     $('#addToOrderDialog').close();
@@ -439,6 +459,15 @@
     link.href = URL.createObjectURL(new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8' }));
     link.download = filename; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
+  async function downloadDefaultMenu() {
+    try {
+      const response = await fetch('./data/hidaka-menu.csv', { cache: 'no-cache' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      download('やきとり日高_メニュー.csv', await response.text());
+    } catch (error) {
+      $('#importStatus').textContent = `基本メニューCSVを保存できませんでした: ${error.message}`;
+    }
+  }
   function resetData() {
     if (!confirm('メニューを登録済みの初期メニューへ戻し、注文履歴と設定を初期化しますか？')) return;
     const base = defaultState();
@@ -496,7 +525,15 @@
     });
   }
 
-  init();
-  setupInstallPrompt();
-  registerServiceWorker();
+  async function boot() {
+    const loadedDefault = await loadDefaultMenu();
+    defaultMenu = loadedDefault.menu;
+    activeDefaultMenuVersion = loadedDefault.version;
+    state = loadState();
+    init();
+    setupInstallPrompt();
+    registerServiceWorker();
+  }
+
+  boot();
 })();

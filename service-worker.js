@@ -1,9 +1,10 @@
-const CACHE_NAME = 'hidaka-order-pwa-v1';
+const CACHE_NAME = 'hidaka-order-pwa-v2';
 const APP_ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './data/hidaka-menu.csv',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png'
