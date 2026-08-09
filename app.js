@@ -304,6 +304,74 @@
     return { items: selected, total, budget: p.budget, unavailable, preferences: p, excludedIds: [...excluded] };
   }
 
+  function replaceOutOfStockItems(order, checkedIds, excludedIds = getTodayOutOfStockIds()) {
+    const targets = new Set(checkedIds.map(String));
+    const excluded = new Set(excludedIds.map(String));
+    const recent = new Set(recentNames());
+    const preferences = order.preferences;
+    const totalLimit = Math.max(order.budget, order.total);
+    const usedIds = new Set(order.items.filter(item => !targets.has(String(item.id))).map(item => String(item.id)));
+    const usedNames = new Set(order.items.filter(item => !targets.has(String(item.id))).map(item => item.name));
+    const notices = order.unavailable.filter(message => !message.startsWith('品切れとして除外中:'));
+    let runningTotal = order.total;
+
+    const replacementScore = (item, original) => {
+      let value = item.category === original.category ? 8 : 0;
+      if (preferences.moods.some(tag => hasTag(item, tag))) value += 5;
+      if (preferences.avoidRecent && recent.has(item.name)) value -= 4;
+      if (preferences.hunger === 'light' && hasTag(item, 'light')) value += 1.7;
+      if (preferences.hunger === 'hearty' && ['main', 'finish'].includes(item.category)) value += 1.5;
+      value -= Math.abs(item.price - original.price) / 1000;
+      return value + Math.random() * 0.8;
+    };
+
+    const findReplacement = (original, maximumPrice) => {
+      const available = state.menu.filter(item =>
+        !excluded.has(String(item.id)) &&
+        !usedIds.has(String(item.id)) &&
+        !usedNames.has(item.name) &&
+        item.category !== 'fee' &&
+        item.price <= maximumPrice
+      );
+      const sameCategory = available.filter(item => item.category === original.category);
+      let candidates = sameCategory;
+      if (!candidates.length && !['drink', 'skewer', 'fee'].includes(original.category)) {
+        candidates = available.filter(item => !['drink', 'skewer', 'fee'].includes(item.category));
+      }
+      if (preferences.avoidRecent) {
+        const fresh = candidates.filter(item => !recent.has(item.name));
+        if (fresh.length) candidates = fresh;
+      }
+      return candidates.sort((a, b) => replacementScore(b, original) - replacementScore(a, original))[0];
+    };
+
+    const items = [];
+    order.items.forEach(item => {
+      if (!targets.has(String(item.id))) {
+        items.push(item);
+        return;
+      }
+
+      const maximumPrice = totalLimit - (runningTotal - item.price);
+      const replacement = findReplacement(item, maximumPrice);
+      runningTotal -= item.price;
+      if (!replacement) {
+        notices.push(`品切れの「${item.name}」は代わりが見つからなかったため、この品だけ外しました。`);
+        return;
+      }
+
+      items.push(replacement);
+      usedIds.add(String(replacement.id));
+      usedNames.add(replacement.name);
+      runningTotal += replacement.price;
+      notices.push(`品切れの「${item.name}」を「${replacement.name}」に変更しました。`);
+    });
+
+    const excludedNames = state.menu.filter(item => excluded.has(String(item.id))).map(item => item.name);
+    if (excludedNames.length) notices.unshift(`品切れとして除外中: ${excludedNames.join('・')}`);
+    return { ...order, items, total: runningTotal, unavailable: notices, excludedIds: [...excluded] };
+  }
+
   function orderHeading(order) {
     const mood = order.preferences.moods.map(value => MOOD_LABEL[value] || TAG_LABEL[value] || value).join('・');
     const base = mood ? `${mood}気分のおすすめ` : order.preferences.hunger === 'light' ? '軽く一杯のおすすめ' : order.preferences.hunger === 'hearty' ? 'しっかり満足するおすすめ' : 'バランスのよいおすすめ';
@@ -326,8 +394,9 @@
     const stockChecks = $$('.out-of-stock-check');
     stockChecks.forEach(check => check.addEventListener('change', () => { reconsiderButton.disabled = !stockChecks.some(input => input.checked); }));
     reconsiderButton.addEventListener('click', () => {
-      markOutOfStock(stockChecks.filter(input => input.checked).map(input => input.dataset.itemId));
-      currentOrder = createOrder(readPreferences());
+      const checkedIds = stockChecks.filter(input => input.checked).map(input => input.dataset.itemId);
+      const excludedIds = markOutOfStock(checkedIds);
+      currentOrder = replaceOutOfStockItems(currentOrder, checkedIds, excludedIds);
       renderOrder(currentOrder);
     });
     $('#regenerate').addEventListener('click', () => { currentOrder = createOrder(readPreferences()); renderOrder(currentOrder); });
@@ -348,9 +417,8 @@
 
   function openAddToOrderDialog() {
     if (!currentOrder) return;
-    const selectedIds = new Set(currentOrder.items.map(item => item.id));
     const excludedIds = new Set(getTodayOutOfStockIds());
-    const choices = state.menu.filter(item => !selectedIds.has(item.id) && !excludedIds.has(item.id));
+    const choices = state.menu.filter(item => !excludedIds.has(item.id));
     const select = $('#additionalItem');
     select.replaceChildren(...choices.map(item => {
       const option = document.createElement('option');
