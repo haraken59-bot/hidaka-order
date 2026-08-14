@@ -6,7 +6,7 @@ const appPath = new URL('../app.js', import.meta.url);
 const source = readFileSync(appPath, 'utf8');
 const instrumented = source.replace(
   /\n\s*boot\(\);\s*\n\}\)\(\);\s*$/,
-  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, setState: value => { state = value; } };\n})();\n'
+  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, regenerateOrderKeepingManualItems, setState: value => { state = value; } };\n})();\n'
 );
 assert.notEqual(instrumented, source, 'app.js のテスト準備に失敗しました。');
 
@@ -33,5 +33,19 @@ const removed = test.replaceOutOfStockItems(originalOrder, ['sold-out'], ['sold-
 assert.equal(removed.items.map(item => item.id).join(','), 'drink,small,fee');
 assert.equal(removed.total, 920);
 assert.match(removed.unavailable.join('\n'), /この品だけ外しました/);
+
+const today = new Intl.DateTimeFormat('sv-SE').format(new Date());
+const manuallyAdded = { id: 'manual', name: '手動追加料理', price: 500, category: 'main', tags: [], actual: true, manuallyAdded: true };
+test.setState({ menu: [small, replacement], history: [], outOfStock: { date: today, ids: [] } });
+const regenerated = test.regenerateOrderKeepingManualItems({ ...originalOrder, items: [small, manuallyAdded], total: 800 }, { ...preferences, drink: 'none', skewerCount: 0 });
+assert.equal(regenerated.items.filter(item => item.manuallyAdded).map(item => item.id).join(','), 'manual');
+assert.equal(regenerated.total, regenerated.items.reduce((sum, item) => sum + item.price, 0));
+
+const finish = { id: 'finish', name: '締め料理', price: 400, category: 'finish', tags: ['締め'], actual: true };
+test.setState({ menu: [finish], history: [], outOfStock: { date: today, ids: [] } });
+const withoutFinish = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: 'none', skewerCount: 0, wantFinish: false });
+assert.equal(withoutFinish.items.some(item => item.category === 'finish'), false);
+const withFinish = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: 'none', skewerCount: 0, wantFinish: true });
+assert.equal(withFinish.items.some(item => item.category === 'finish'), true);
 
 console.log('品切れ品だけが置き換わり、未チェック品が維持されることを確認しました。');

@@ -288,7 +288,7 @@
     const baseCount = p.hunger === 'light' ? 1 : p.hunger === 'normal' ? 1 : 2;
     const minimum = 1 + (selected.some(item => item.category === 'drink') ? 1 : 0) + baseCount + p.skewerCount + (p.wantFinish ? 1 : 0);
     while (selected.length < minimum) {
-      let fallbackOptions = candidates(null).filter(item => !['skewer', 'drink', 'dessert', 'fee'].includes(item.category) && item.price <= remaining());
+      let fallbackOptions = candidates(null).filter(item => !['skewer', 'drink', 'dessert', 'fee'].includes(item.category) && (p.wantFinish || item.category !== 'finish') && item.price <= remaining());
       if (p.avoidRecent) { const fresh = fallbackOptions.filter(item => !recent.has(item.name)); if (fresh.length) fallbackOptions = fresh; }
       const fallback = fallbackOptions.sort((a, b) => score(b, 'fallback') - score(a, 'fallback'))[0];
       if (!fallback) break;
@@ -331,6 +331,7 @@
         !usedIds.has(String(item.id)) &&
         !usedNames.has(item.name) &&
         item.category !== 'fee' &&
+        (preferences.wantFinish || item.category !== 'finish') &&
         item.price <= maximumPrice
       );
       const sameCategory = available.filter(item => item.category === original.category);
@@ -372,6 +373,16 @@
     return { ...order, items, total: runningTotal, unavailable: notices, excludedIds: [...excluded] };
   }
 
+  function regenerateOrderKeepingManualItems(order, preferences) {
+    const manualItems = order?.items.filter(item => item.manuallyAdded) || [];
+    const regenerated = createOrder(preferences);
+    if (!manualItems.length) return regenerated;
+    const priority = { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 };
+    const items = [...regenerated.items, ...manualItems].sort((a, b) => priority[a.category] - priority[b.category]);
+    const total = items.reduce((sum, item) => sum + item.price, 0);
+    return { ...regenerated, items, total };
+  }
+
   function orderHeading(order) {
     const mood = order.preferences.moods.map(value => MOOD_LABEL[value] || TAG_LABEL[value] || value).join('・');
     const base = mood ? `${mood}気分のおすすめ` : order.preferences.hunger === 'light' ? '軽く一杯のおすすめ' : order.preferences.hunger === 'hearty' ? 'しっかり満足するおすすめ' : 'バランスのよいおすすめ';
@@ -399,7 +410,7 @@
       currentOrder = replaceOutOfStockItems(currentOrder, checkedIds, excludedIds);
       renderOrder(currentOrder);
     });
-    $('#regenerate').addEventListener('click', () => { currentOrder = createOrder(readPreferences()); renderOrder(currentOrder); });
+    $('#regenerate').addEventListener('click', () => { currentOrder = regenerateOrderKeepingManualItems(currentOrder, readPreferences()); renderOrder(currentOrder); });
     $('#addFromMenu').addEventListener('click', openAddToOrderDialog);
     $('#recordOrder').addEventListener('click', recordCurrentOrder);
   }
@@ -437,8 +448,9 @@
     const item = state.menu.find(menuItem => menuItem.id === $('#additionalItem').value);
     if (!item || getTodayOutOfStockIds().includes(item.id)) { $('#addOrderStatus').textContent = 'この商品は品切れのため追加できません。'; return; }
     const priority = { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 };
-    const items = [...currentOrder.items, item].sort((a, b) => priority[a.category] - priority[b.category]);
-    currentOrder = { ...currentOrder, items, total: currentOrder.total + item.price };
+    const manuallyAddedItem = { ...item, manuallyAdded: true };
+    const items = [...currentOrder.items, manuallyAddedItem].sort((a, b) => priority[a.category] - priority[b.category]);
+    currentOrder = { ...currentOrder, items, total: currentOrder.total + manuallyAddedItem.price };
     $('#addToOrderDialog').close();
     renderOrder(currentOrder);
   }
