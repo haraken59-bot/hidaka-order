@@ -48,4 +48,9 @@ assert.equal(withoutFinish.items.some(item => item.category === 'finish'), false
 const withFinish = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: 'none', skewerCount: 0, wantFinish: true });
 assert.equal(withFinish.items.some(item => item.category === 'finish'), true);
 
+const meatSkewer = { id: 'meat-skewer', name: '豚肉串', price: 200, category: 'skewer', tags: ['豚'], actual: true };
+test.setState({ menu: [small, meatSkewer], history: [], outOfStock: { date: today, ids: [] } });
+const lightOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none', skewerCount: 1, wantFinish: false });
+assert.equal(lightOrder.items.some(item => item.id === 'meat-skewer'), true);
+
 console.log('品切れ品だけが置き換わり、未チェック品が維持されることを確認しました。');

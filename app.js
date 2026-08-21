@@ -247,8 +247,8 @@
       let value = Math.random() * 0.8;
       if (p.moods.some(tag => hasTag(item, tag))) value += 5;
       if (p.avoidRecent && recent.has(item.name)) value -= 4;
-      if (p.hunger === 'light' && hasTag(item, 'light')) value += 1.7;
-      if (p.hunger === 'hearty' && ['main', 'finish'].includes(item.category)) value += 1.5;
+      if (item.category !== 'skewer' && p.hunger === 'light' && hasTag(item, 'light')) value += 1.7;
+      if (item.category !== 'skewer' && p.hunger === 'hearty' && ['main', 'finish'].includes(item.category)) value += 1.5;
       return value - item.price / 12000;
     };
     const choose = (category, kind, allowRecent = false) => {
@@ -319,8 +319,8 @@
       let value = item.category === original.category ? 8 : 0;
       if (preferences.moods.some(tag => hasTag(item, tag))) value += 5;
       if (preferences.avoidRecent && recent.has(item.name)) value -= 4;
-      if (preferences.hunger === 'light' && hasTag(item, 'light')) value += 1.7;
-      if (preferences.hunger === 'hearty' && ['main', 'finish'].includes(item.category)) value += 1.5;
+      if (item.category !== 'skewer' && preferences.hunger === 'light' && hasTag(item, 'light')) value += 1.7;
+      if (item.category !== 'skewer' && preferences.hunger === 'hearty' && ['main', 'finish'].includes(item.category)) value += 1.5;
       value -= Math.abs(item.price - original.price) / 1000;
       return value + Math.random() * 0.8;
     };
