@@ -65,7 +65,7 @@
       const shouldInstallNewBaseMenu = saved.defaultMenuVersion !== activeDefaultMenuVersion;
       const menu = shouldInstallNewBaseMenu ? cloneMenu(base.menu) : saved.menu.map(normalizeMenuItem).filter(Boolean);
       const initialMenu = shouldInstallNewBaseMenu ? cloneMenu(base.initialMenu) : (Array.isArray(saved.initialMenu) ? saved.initialMenu.map(normalizeMenuItem).filter(Boolean) : cloneMenu(menu));
-      return { ...base, ...saved, defaultMenuVersion: activeDefaultMenuVersion, preferences: { ...base.preferences, ...(saved.preferences || {}) }, outOfStock, menu, initialMenu, history: saved.history.map(normalizeHistoryItem).filter(Boolean) };
+      return { ...base, ...saved, defaultMenuVersion: activeDefaultMenuVersion, preferences: { ...base.preferences, ...(saved.preferences || {}), avoidRecent: true }, outOfStock, menu, initialMenu, history: saved.history.map(normalizeHistoryItem).filter(Boolean) };
     } catch { return defaultState(); }
   }
 
@@ -159,7 +159,7 @@
     $$('input[name="mood"]').forEach(input => { input.checked = p.moods.includes(input.value); });
     $('#mustShishito').checked = p.mustShishito;
     $('#wantFinish').checked = p.wantFinish;
-    $('#avoidRecent').checked = p.avoidRecent;
+    p.avoidRecent = true;
   }
 
   function renderMoodChoices() {
@@ -190,7 +190,7 @@
     const preferences = {
       budget: ORDER_BUDGET, hunger: $('input[name="hunger"]:checked').value, skewerCount: Number($('#skewerCount').value), drink: $('#drink').value,
       moods: $$('input[name="mood"]:checked').map(input => input.value), mustShishito: $('#mustShishito').checked,
-      wantFinish: $('#wantFinish').checked, avoidRecent: $('#avoidRecent').checked
+      wantFinish: $('#wantFinish').checked, avoidRecent: true
     };
     state.preferences = preferences;
     saveState();
@@ -221,8 +221,34 @@
     return value;
   }
 
-  function recentNames() {
-    return state.history.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3).flatMap(entry => entry.items.map(item => item.name));
+  function historyNameKey(name) {
+    return String(name || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+  }
+
+  function sortedHistory() {
+    return state.history
+      .map((entry, index) => ({ entry, index }))
+      .sort((a, b) => b.entry.date.localeCompare(a.entry.date) || b.index - a.index)
+      .map(({ entry }) => entry);
+  }
+
+  function recentOrderStats() {
+    const weights = [9, 5, 2];
+    const penalties = new Map();
+    const latest = new Set();
+    const orders = sortedHistory().slice(0, weights.length);
+    orders.forEach((entry, orderIndex) => {
+      const names = new Set(entry.items.map(item => historyNameKey(item.name)).filter(Boolean));
+      names.forEach(name => penalties.set(name, (penalties.get(name) || 0) + weights[orderIndex]));
+      if (orderIndex === 0) names.forEach(name => latest.add(name));
+    });
+    return {
+      penalty: item => penalties.get(historyNameKey(item.name)) || 0,
+      preferNotLatest: options => {
+        const alternatives = options.filter(item => !latest.has(historyNameKey(item.name)));
+        return alternatives.length ? alternatives : options;
+      }
+    };
   }
 
   function matchesSelectedDrink(item, drink) {
@@ -241,19 +267,19 @@
     const remaining = () => p.budget - selected.reduce((sum, item) => sum + item.price, 0);
     const add = item => { if (item && !excluded.has(item.id) && !selected.some(choice => choice.name === item.name) && item.price <= remaining()) selected.push(item); return item; };
     const findByName = name => state.menu.find(item => item.name === name);
-    const recent = new Set(recentNames());
+    const recent = recentOrderStats();
     const candidates = (category) => state.menu.filter(item => (!category || item.category === category) && !excluded.has(item.id)).filter(item => !selected.some(choice => choice.name === item.name));
     const score = (item, kind) => {
       let value = Math.random() * 0.8;
       if (p.moods.some(tag => hasTag(item, tag))) value += 5;
-      if (p.avoidRecent && recent.has(item.name)) value -= 4;
+      value -= recent.penalty(item);
       if (item.category !== 'skewer' && p.hunger === 'light' && hasTag(item, 'light')) value += 1.7;
       if (item.category !== 'skewer' && p.hunger === 'hearty' && ['main', 'finish'].includes(item.category)) value += 1.5;
       return value - item.price / 12000;
     };
     const choose = (category, kind, allowRecent = false) => {
       let options = candidates(category).filter(item => item.price <= remaining());
-      if (!allowRecent && p.avoidRecent) { const fresh = options.filter(item => !recent.has(item.name)); if (fresh.length) options = fresh; }
+      if (!allowRecent) options = recent.preferNotLatest(options);
       return options.sort((a, b) => score(b, kind) - score(a, kind))[0];
     };
 
@@ -289,7 +315,7 @@
     const minimum = 1 + (selected.some(item => item.category === 'drink') ? 1 : 0) + baseCount + p.skewerCount + (p.wantFinish ? 1 : 0);
     while (selected.length < minimum) {
       let fallbackOptions = candidates(null).filter(item => !['skewer', 'drink', 'dessert', 'fee'].includes(item.category) && (p.wantFinish || item.category !== 'finish') && item.price <= remaining());
-      if (p.avoidRecent) { const fresh = fallbackOptions.filter(item => !recent.has(item.name)); if (fresh.length) fallbackOptions = fresh; }
+      fallbackOptions = recent.preferNotLatest(fallbackOptions);
       const fallback = fallbackOptions.sort((a, b) => score(b, 'fallback') - score(a, 'fallback'))[0];
       if (!fallback) break;
       add(fallback);
@@ -307,7 +333,7 @@
   function replaceOutOfStockItems(order, checkedIds, excludedIds = getTodayOutOfStockIds()) {
     const targets = new Set(checkedIds.map(String));
     const excluded = new Set(excludedIds.map(String));
-    const recent = new Set(recentNames());
+    const recent = recentOrderStats();
     const preferences = order.preferences;
     const totalLimit = Math.max(order.budget, order.total);
     const usedIds = new Set(order.items.filter(item => !targets.has(String(item.id))).map(item => String(item.id)));
@@ -318,7 +344,7 @@
     const replacementScore = (item, original) => {
       let value = item.category === original.category ? 8 : 0;
       if (preferences.moods.some(tag => hasTag(item, tag))) value += 5;
-      if (preferences.avoidRecent && recent.has(item.name)) value -= 4;
+      value -= recent.penalty(item);
       if (item.category !== 'skewer' && preferences.hunger === 'light' && hasTag(item, 'light')) value += 1.7;
       if (item.category !== 'skewer' && preferences.hunger === 'hearty' && ['main', 'finish'].includes(item.category)) value += 1.5;
       value -= Math.abs(item.price - original.price) / 1000;
@@ -339,10 +365,7 @@
       if (!candidates.length && !['drink', 'skewer', 'fee'].includes(original.category)) {
         candidates = available.filter(item => !['drink', 'skewer', 'fee'].includes(item.category));
       }
-      if (preferences.avoidRecent) {
-        const fresh = candidates.filter(item => !recent.has(item.name));
-        if (fresh.length) candidates = fresh;
-      }
+      candidates = recent.preferNotLatest(candidates);
       return candidates.sort((a, b) => replacementScore(b, original) - replacementScore(a, original))[0];
     };
 
@@ -456,10 +479,31 @@
   }
 
   function renderHistorySummary() {
-    const history = state.history.slice().sort((a, b) => b.date.localeCompare(a.date));
+    const history = sortedHistory();
     if (!history.length) { $('#historySummary').innerHTML = '<h2>注文履歴</h2><p>まだ履歴はありません。注文を記録すると、次回は食べたばかりの料理を避けられます。</p>'; return; }
     const latest = history[0];
-    $('#historySummary').innerHTML = `<h2>前回の注文 <span>(${escapeHtml(latest.date)})</span></h2><p>${latest.items.map(item => escapeHtml(item.name)).join('・')}</p>`;
+    $('#historySummary').innerHTML = `<h2>前回の注文 <span>(${escapeHtml(latest.date)})</span></h2><p>${latest.items.map(item => escapeHtml(item.name)).join('・')}</p><button class="text-button history-open-button" type="button" id="viewHistory">すべての履歴を見る（${history.length}件）</button>`;
+    $('#viewHistory').addEventListener('click', openHistoryDialog);
+  }
+
+  function openHistoryDialog() {
+    const history = sortedHistory();
+    const list = $('#historyList');
+    if (!history.length) {
+      list.innerHTML = '<p class="history-empty">まだ注文履歴はありません。</p>';
+    } else {
+      list.innerHTML = history.map((entry, index) => {
+        const hasPrices = entry.items.length > 0 && entry.items.every(item => Number.isFinite(Number(item.price)));
+        const total = hasPrices ? entry.items.reduce((sum, item) => sum + Number(item.price), 0) : null;
+        const summary = `${entry.items.length}品・${hasPrices ? `合計 ${yen(total)}` : '金額記録なし'}`;
+        const items = entry.items.map(item => {
+          const price = Number.isFinite(Number(item.price)) ? `<span>${yen(Number(item.price))}</span>` : '';
+          return `<li>${escapeHtml(item.name)}${price}</li>`;
+        }).join('');
+        return `<article class="history-entry"><div class="history-entry-header"><strong>${escapeHtml(entry.date)}${index === 0 ? '（前回）' : ''}</strong><span>${summary}</span></div><ol>${items}</ol></article>`;
+      }).join('');
+    }
+    $('#historyDialog').showModal();
   }
 
   function openDataDialog() { renderMenuEditor(); $('#dataDialog').showModal(); }

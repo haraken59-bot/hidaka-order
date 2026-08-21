@@ -69,7 +69,6 @@
         <div class="toggle-list">
           <label class="toggle"><input id="mustShishito" type="checkbox" checked /><span></span>ししとうを必ず入れる</label>
           <label class="toggle"><input id="wantFinish" type="checkbox" /><span></span>締めを入れる</label>
-          <label class="toggle"><input id="avoidRecent" type="checkbox" checked /><span></span>最近食べたものを避ける</label>
         </div>
 
         <button class="primary-button" type="submit">この条件で注文を考える <span>→</span></button>
@@ -165,6 +164,17 @@
         <p id="addOrderStatus" class="add-order-status" aria-live="polite"></p>
         <div class="form-actions"><button type="button" class="secondary-button" id="cancelOrderAddition">キャンセル</button><button class="primary-button" id="confirmOrderAddition" type="submit">追加する</button></div>
       </form>
+    </dialog>
+
+    <dialog id="historyDialog" class="data-dialog">
+      <form method="dialog" class="dialog-header">
+        <div>
+          <p class="eyebrow">端末内の注文記録</p>
+          <h2>過去の注文履歴</h2>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="閉じる">×</button>
+      </form>
+      <div class="dialog-content history-list" id="historyList"></div>
     </dialog>
 
     <script src="app.js"></script>

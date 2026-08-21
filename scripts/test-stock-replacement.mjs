@@ -53,4 +53,29 @@ test.setState({ menu: [small, meatSkewer], history: [], outOfStock: { date: toda
 const lightOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none', skewerCount: 1, wantFinish: false });
 assert.equal(lightOrder.items.some(item => item.id === 'meat-skewer'), true);
 
+const recentDish = { id: 'recent-dish', name: '最近食べた料理', price: 300, category: 'small', tags: [], actual: true };
+const freshDish = { id: 'fresh-dish', name: 'まだ食べていない料理', price: 300, category: 'small', tags: [], actual: true };
+test.setState({ menu: [recentDish, freshDish], history: [{ date: today, items: [{ name: recentDish.name }] }], outOfStock: { date: today, ids: [] } });
+const historyAwareOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, avoidRecent: false, drink: 'none', skewerCount: 0, wantFinish: false });
+assert.equal(historyAwareOrder.items.some(item => item.id === 'fresh-dish'), true);
+assert.equal(historyAwareOrder.items.some(item => item.id === 'recent-dish'), false);
+
+const porkBelly = { id: 'pork-belly', name: '豚バラ串', price: 200, category: 'skewer', tags: ['豚'], actual: true };
+const chickenSkewer = { id: 'chicken-skewer', name: '鶏もも串', price: 200, category: 'skewer', tags: ['鶏'], actual: true };
+test.setState({
+  menu: [porkBelly, chickenSkewer],
+  history: [
+    { date: today, items: [{ name: chickenSkewer.name }] },
+    { date: today, items: [{ name: porkBelly.name }] }
+  ],
+  outOfStock: { date: today, ids: [] }
+});
+const noConsecutivePork = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: 'none', skewerCount: 1, wantFinish: false });
+assert.equal(noConsecutivePork.items.some(item => item.id === 'pork-belly'), false);
+assert.equal(noConsecutivePork.items.some(item => item.id === 'chicken-skewer'), true);
+
+test.setState({ menu: [porkBelly], history: [{ date: today, items: [{ name: porkBelly.name }] }], outOfStock: { date: today, ids: [] } });
+const onlyAvailableRepeat = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: 'none', skewerCount: 1, wantFinish: false });
+assert.equal(onlyAvailableRepeat.items.some(item => item.id === 'pork-belly'), true);
+
 console.log('品切れ品だけが置き換わり、未チェック品が維持されることを確認しました。');
