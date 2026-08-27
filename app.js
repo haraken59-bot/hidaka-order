@@ -4,7 +4,7 @@
   const STORAGE_KEY = 'hidaka-order-v1';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-06-v1';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
-  const CATEGORY_LABEL = { drink: 'お酒', small: '小皿・つまみ', skewer: '串', main: '主菜', finish: '締め', dessert: 'デザート', fee: '割代' };
+  const CATEGORY_LABEL = { drink: 'お酒', small: '小皿・つまみ', skewer: '串', main: '一品', finish: '締め', dessert: 'デザート', fee: '割代' };
   const MOOD_LABEL = { pork: '豚', chicken: '鶏', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの' };
   const TAG_LABEL = { pork: '豚', chicken: '鶏', beef: '牛', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの', light: '軽め', drink: '飲み物', finish: '締め', rice: 'ご飯', noodle: '麺', soup: '汁物', dessert: 'デザート', sweet: '甘いもの', alcohol: 'アルコール', nonalcohol: 'ノンアルコール', shishito: 'ししとう' };
   const TAG_CANONICAL = { pork: 'pork', '豚': 'pork', chicken: 'chicken', '鶏': 'chicken', beef: 'beef', '牛': 'beef', seafood: 'seafood', '魚介': 'seafood', vegetable: 'vegetable', '野菜': 'vegetable', spicy: 'spicy', '辛いもの': 'spicy', light: 'light', '軽め': 'light', drink: 'drink', '飲み物': 'drink', finish: 'finish', '締め': 'finish', rice: 'rice', 'ご飯': 'rice', noodle: 'noodle', '麺': 'noodle', soup: 'soup', '汁物': 'soup', dessert: 'dessert', 'デザート': 'dessert', sweet: 'sweet', '甘いもの': 'sweet', alcohol: 'alcohol', 'アルコール': 'alcohol', nonalcohol: 'nonalcohol', 'ノンアルコール': 'nonalcohol', shishito: 'shishito', 'ししとう': 'shishito' };
@@ -109,7 +109,7 @@
     const price = Number(raw.price ?? raw['価格'] ?? raw['値段']);
     if (!name || !Number.isFinite(price) || price < 0) return null;
     const categoryValue = String(raw.category ?? raw['分類'] ?? 'small').toLowerCase();
-    const categoryMap = { 'お酒': 'drink', '飲み物': 'drink', '小皿': 'small', '小皿・つまみ': 'small', 'つまみ': 'small', '串': 'skewer', '焼き鳥': 'skewer', '主菜': 'main', '締め': 'finish', 'ご飯': 'finish', 'デザート': 'dessert', '甘味': 'dessert' };
+    const categoryMap = { 'お酒': 'drink', '飲み物': 'drink', '小皿': 'small', '小皿・つまみ': 'small', 'つまみ': 'small', '串': 'skewer', '焼き鳥': 'skewer', '一品': 'main', '主菜': 'main', '締め': 'finish', 'ご飯': 'finish', 'デザート': 'dessert', '甘味': 'dessert' };
     const category = CATEGORY_LABEL[categoryValue] ? categoryValue : (categoryMap[categoryValue] || 'small');
     const actualValue = raw.actual ?? raw['実額'] ?? raw['実売価格'];
     return { id: String(raw.id || raw['ID'] || uid()), name, price: Math.round(price), category, tags: normalizeTags(raw.tags ?? raw['タグ']), actual: actualValue === true || String(actualValue).toLowerCase() === 'true' || String(actualValue) === '1' };
@@ -261,11 +261,24 @@
     return Boolean(patterns[drink]?.test(text));
   }
 
+  function budgetGuidance(items, budget) {
+    const recommendedItems = items.filter(item => !item.manuallyAdded);
+    const recommendedTotal = recommendedItems.reduce((sum, item) => sum + item.price, 0);
+    if (recommendedTotal <= budget) return '';
+    const highPriced = recommendedItems.filter(item => item.category !== 'fee' && item.price >= budget * 0.3);
+    const details = highPriced.length
+      ? ` 高額品: ${highPriced.map(item => `${item.name}（${item.recommendationReason || '指定条件を優先'}）`).join('・')}`
+      : '';
+    return `目安予算 ${yen(budget)} を ${yen(recommendedTotal - budget)} 超えています。指定した条件と各商品の選定理由を優先しました。${details}`;
+  }
+
   function createOrder(p, excludedIds = getTodayOutOfStockIds()) {
     const excluded = new Set(excludedIds);
     const selected = [];
-    const remaining = () => p.budget - selected.reduce((sum, item) => sum + item.price, 0);
-    const add = item => { if (item && !excluded.has(item.id) && !selected.some(choice => choice.name === item.name) && item.price <= remaining()) selected.push(item); return item; };
+    const add = (item, recommendationReason = '') => {
+      if (item && !excluded.has(item.id) && !selected.some(choice => choice.name === item.name)) selected.push({ ...item, recommendationReason });
+      return item;
+    };
     const findByName = name => state.menu.find(item => item.name === name);
     const recent = recentOrderStats();
     const candidates = (category) => state.menu.filter(item => (!category || item.category === category) && !excluded.has(item.id)).filter(item => !selected.some(choice => choice.name === item.name));
@@ -277,54 +290,71 @@
       if (item.category !== 'skewer' && p.hunger === 'hearty' && ['main', 'finish'].includes(item.category)) value += 1.5;
       return value - item.price / 12000;
     };
+    const reasonFor = (item, kind) => {
+      if (!item) return '';
+      const moodMatches = p.moods.filter(tag => hasTag(item, tag)).map(tag => MOOD_LABEL[tag] || TAG_LABEL[tag] || tag);
+      if (moodMatches.length) return `今日の気分「${moodMatches.join('・')}」に合うため`;
+      if (item.price >= p.budget * 0.3) return '高額品ですが、普段と違う一品を楽しむ変化枠として';
+      if (recent.penalty(item) === 0 && state.history.length) return '最近の注文と重ならないため';
+      if (kind === 'main') return '食事全体にボリュームを加えるため';
+      if (kind === 'finish') return '指定された締めとして';
+      if (kind === 'fallback') return '料理全体のバランスを補うため';
+      return '料理全体のバランスを整えるため';
+    };
     const choose = (category, kind, allowRecent = false) => {
-      let options = candidates(category).filter(item => item.price <= remaining());
+      let options = candidates(category);
       if (!allowRecent) options = recent.preferNotLatest(options);
       return options.sort((a, b) => score(b, kind) - score(a, kind))[0];
     };
 
     const unavailable = [];
-    if (KEEP_SHOCHU_FEE.price <= p.budget) add(KEEP_SHOCHU_FEE);
-    else unavailable.push(`割代（焼酎キープ）${yen(KEEP_SHOCHU_FEE.price)} が予算 ${yen(p.budget)} を上回るため、入れられませんでした。`);
-    if (p.mustShishito) {
-      const shishito = findByName('ししとう串') || state.menu.find(item => /ししとう/.test(item.name) || hasTag(item, 'shishito'));
-      if (!shishito) unavailable.push('ししとうがメニューに登録されていないため、入れられませんでした。');
-      else if (excluded.has(shishito.id)) unavailable.push('ししとうは品切れとして除外しました。');
-      else if (shishito.price > remaining()) unavailable.push(`ししとう（${yen(shishito.price)}）が、固定の割代を含む残り予算 ${yen(remaining())} を上回るため、入れられませんでした。`);
-      else add(shishito);
-    }
+    add(KEEP_SHOCHU_FEE, '焼酎キープの固定割代');
     if (p.drink !== 'none') {
       const selectedDrink = state.menu.find(item => item.id === p.drink && item.category === 'drink');
       if (!selectedDrink) unavailable.push('選択した飲み物がメニューに登録されていないため、入れられませんでした。');
       else if (excluded.has(selectedDrink.id)) unavailable.push(`選択した飲み物「${selectedDrink.name}」は品切れとして除外しました。`);
-      else if (selectedDrink.price > remaining()) unavailable.push(`選択した飲み物「${selectedDrink.name}」（${yen(selectedDrink.price)}）が、残り予算 ${yen(remaining())} を上回るため、入れられませんでした。`);
-      else add(selectedDrink);
+      else add(selectedDrink, '最初の飲み物として指定');
+    }
+    if (p.mustShishito) {
+      const shishito = findByName('ししとう串') || state.menu.find(item => /ししとう/.test(item.name) || hasTag(item, 'shishito'));
+      if (!shishito) unavailable.push('ししとうがメニューに登録されていないため、入れられませんでした。');
+      else if (excluded.has(shishito.id)) unavailable.push('ししとうは品切れとして除外しました。');
+      else add(shishito, '必須指定された串');
     }
 
-    const basePlan = p.hunger === 'light' ? ['small'] : p.hunger === 'normal' ? ['small'] : ['small', 'main'];
-    basePlan.forEach(category => add(choose(category, category)));
     while (selected.filter(item => item.category === 'skewer').length < p.skewerCount) {
       const skewer = choose('skewer', 'skewer');
       if (!skewer) break;
-      add(skewer);
+      add(skewer, `指定された串 ${p.skewerCount}本を優先`);
     }
-    if (p.wantFinish) add(choose('finish', 'finish'));
+    if (p.wantFinish) {
+      const finish = choose('finish', 'finish');
+      add(finish, '「締めを入れる」の指定を優先');
+    }
 
-    // If a category is unavailable or too expensive, use the most suitable remaining dish.
+    const basePlan = p.hunger === 'light' ? ['small'] : p.hunger === 'normal' ? ['small'] : ['small', 'main'];
+    basePlan.forEach(category => {
+      const item = choose(category, category);
+      add(item, reasonFor(item, category));
+    });
+
+    // If a category is unavailable, use the most suitable remaining dish.
     const baseCount = p.hunger === 'light' ? 1 : p.hunger === 'normal' ? 1 : 2;
     const minimum = 1 + (selected.some(item => item.category === 'drink') ? 1 : 0) + baseCount + p.skewerCount + (p.wantFinish ? 1 : 0);
     while (selected.length < minimum) {
-      let fallbackOptions = candidates(null).filter(item => !['skewer', 'drink', 'dessert', 'fee'].includes(item.category) && (p.wantFinish || item.category !== 'finish') && item.price <= remaining());
+      let fallbackOptions = candidates(null).filter(item => !['skewer', 'drink', 'dessert', 'fee'].includes(item.category) && (p.wantFinish || item.category !== 'finish'));
       fallbackOptions = recent.preferNotLatest(fallbackOptions);
       const fallback = fallbackOptions.sort((a, b) => score(b, 'fallback') - score(a, 'fallback'))[0];
       if (!fallback) break;
-      add(fallback);
+      add(fallback, reasonFor(fallback, 'fallback'));
     }
     selected.sort((a, b) => ({ drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 }[a.category] - { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 }[b.category]));
     const total = selected.reduce((sum, item) => sum + item.price, 0);
     const actualSkewerCount = selected.filter(item => item.category === 'skewer').length;
-    if (actualSkewerCount < p.skewerCount) unavailable.push(`串物は希望の ${p.skewerCount}本に届かず、${actualSkewerCount}本までとなりました。`);
-    if (p.wantFinish && !selected.some(item => item.category === 'finish')) unavailable.push('締めは予算内に収まらないため、入れられませんでした。');
+    if (actualSkewerCount < p.skewerCount) unavailable.push(`利用可能な串が不足しているため、希望の ${p.skewerCount}本に届かず ${actualSkewerCount}本までとなりました。`);
+    if (p.wantFinish && !selected.some(item => item.category === 'finish')) unavailable.push('締めの候補が登録されていないか品切れのため、入れられませんでした。');
+    const budgetMessage = budgetGuidance(selected, p.budget);
+    if (budgetMessage) unavailable.unshift(budgetMessage);
     const excludedNames = state.menu.filter(item => excluded.has(item.id)).map(item => item.name);
     if (excludedNames.length) unavailable.unshift(`品切れとして除外中: ${excludedNames.join('・')}`);
     return { items: selected, total, budget: p.budget, unavailable, preferences: p, excludedIds: [...excluded] };
@@ -335,10 +365,9 @@
     const excluded = new Set(excludedIds.map(String));
     const recent = recentOrderStats();
     const preferences = order.preferences;
-    const totalLimit = Math.max(order.budget, order.total);
     const usedIds = new Set(order.items.filter(item => !targets.has(String(item.id))).map(item => String(item.id)));
     const usedNames = new Set(order.items.filter(item => !targets.has(String(item.id))).map(item => item.name));
-    const notices = order.unavailable.filter(message => !message.startsWith('品切れとして除外中:'));
+    const notices = order.unavailable.filter(message => !message.startsWith('品切れとして除外中:') && !message.startsWith('目安予算 '));
     let runningTotal = order.total;
 
     const replacementScore = (item, original) => {
@@ -351,14 +380,13 @@
       return value + Math.random() * 0.8;
     };
 
-    const findReplacement = (original, maximumPrice) => {
+    const findReplacement = (original) => {
       const available = state.menu.filter(item =>
         !excluded.has(String(item.id)) &&
         !usedIds.has(String(item.id)) &&
         !usedNames.has(item.name) &&
         item.category !== 'fee' &&
-        (preferences.wantFinish || item.category !== 'finish') &&
-        item.price <= maximumPrice
+        (preferences.wantFinish || item.category !== 'finish')
       );
       const sameCategory = available.filter(item => item.category === original.category);
       let candidates = sameCategory;
@@ -376,15 +404,14 @@
         return;
       }
 
-      const maximumPrice = totalLimit - (runningTotal - item.price);
-      const replacement = findReplacement(item, maximumPrice);
+      const replacement = findReplacement(item);
       runningTotal -= item.price;
       if (!replacement) {
         notices.push(`品切れの「${item.name}」は代わりが見つからなかったため、この品だけ外しました。`);
         return;
       }
 
-      items.push(replacement);
+      items.push({ ...replacement, recommendationReason: `品切れの「${item.name}」と同じ分類から代替` });
       usedIds.add(String(replacement.id));
       usedNames.add(replacement.name);
       runningTotal += replacement.price;
@@ -393,6 +420,8 @@
 
     const excludedNames = state.menu.filter(item => excluded.has(String(item.id))).map(item => item.name);
     if (excludedNames.length) notices.unshift(`品切れとして除外中: ${excludedNames.join('・')}`);
+    const budgetMessage = budgetGuidance(items, order.budget);
+    if (budgetMessage) notices.unshift(budgetMessage);
     return { ...order, items, total: runningTotal, unavailable: notices, excludedIds: [...excluded] };
   }
 
@@ -414,16 +443,18 @@
 
   function renderOrder(order) {
     const isEstimate = order.items.some(item => !item.actual);
-    const budgetDifference = order.total - order.budget;
-    const budgetStatus = budgetDifference > 0 ? `予算超過 ${yen(budgetDifference)}` : `残り ${yen(-budgetDifference)}`;
+    const recommendedTotal = order.items.filter(item => !item.manuallyAdded).reduce((sum, item) => sum + item.price, 0);
+    const budgetDifference = recommendedTotal - order.budget;
+    const budgetStatus = budgetDifference > 0 ? `目安超過 ${yen(budgetDifference)}` : `目安まで ${yen(-budgetDifference)}`;
     const list = order.items.length ? order.items.map((item, index) => {
       const moodMatches = order.preferences.moods.filter(tag => hasTag(item, tag));
       const moodMark = moodMatches.length ? '<span class="mood-match">★ 気分に合う</span>' : '';
+      const reason = item.recommendationReason ? `<small class="recommendation-reason">理由: ${escapeHtml(item.recommendationReason)}</small>` : '';
       const stockControl = item.category === 'fee' ? '' : `<label class="out-of-stock"><input class="out-of-stock-check" type="checkbox" data-item-id="${escapeHtml(item.id)}" /> 品切れ</label>`;
-      return `<li class="order-item"><span class="order-number">${index + 1}</span><div class="order-details"><strong>${escapeHtml(item.name)}${moodMark}</strong><small>${CATEGORY_LABEL[item.category]}</small></div><span class="order-price">${yen(item.price)}</span>${stockControl}</li>`;
-    }).join('') : '<li class="order-item"><div class="order-details"><strong>この条件ではメニューを組めませんでした</strong><small>予算を上げるか、メニューを追加してください。</small></div></li>';
+      return `<li class="order-item"><span class="order-number">${index + 1}</span><div class="order-details"><strong>${escapeHtml(item.name)}${moodMark}</strong><small>${CATEGORY_LABEL[item.category]}</small>${reason}</div><span class="order-price">${yen(item.price)}</span>${stockControl}</li>`;
+    }).join('') : '<li class="order-item"><div class="order-details"><strong>この条件ではメニューを組めませんでした</strong><small>メニュー登録や品切れ状況を確認してください。</small></div></li>';
     const unavailable = order.unavailable.length ? `<p class="notice">${order.unavailable.map(escapeHtml).join('<br>')}</p>` : '';
-    $('#result').innerHTML = `<article class="result-card"><div class="result-top"><p>頼む順番まで、このままどうぞ</p><h2>${orderHeading(order)}</h2><div class="price-summary"><strong>${yen(order.total)}</strong><small>予算 ${yen(order.budget)} のうち<br>${budgetStatus}${isEstimate ? '（目安）' : ''}</small></div></div><ol class="order-list">${list}</ol>${unavailable}<div class="result-actions"><button class="secondary-button" type="button" id="regenerate">組み直す</button><button class="secondary-button" type="button" id="reconsiderOutOfStock" disabled>品切れを除いて組み直す</button><button class="secondary-button" type="button" id="addFromMenu">メニューから追加</button><button class="primary-button" type="button" id="recordOrder">この注文を記録</button></div></article>`;
+    $('#result').innerHTML = `<article class="result-card"><div class="result-top"><p>頼む順番まで、このままどうぞ</p><h2>${orderHeading(order)}</h2><div class="price-summary"><strong>${yen(order.total)}</strong><small>目安 ${yen(order.budget)}<br>${budgetStatus}${isEstimate ? '（価格は目安）' : ''}</small></div></div><ol class="order-list">${list}</ol>${unavailable}<div class="result-actions"><button class="secondary-button" type="button" id="regenerate">組み直す</button><button class="secondary-button" type="button" id="reconsiderOutOfStock" disabled>品切れを除いて組み直す</button><button class="secondary-button" type="button" id="addFromMenu">メニューから追加</button><button class="primary-button" type="button" id="recordOrder">この注文を記録</button></div></article>`;
     const reconsiderButton = $('#reconsiderOutOfStock');
     const stockChecks = $$('.out-of-stock-check');
     stockChecks.forEach(check => check.addEventListener('change', () => { reconsiderButton.disabled = !stockChecks.some(input => input.checked); }));
@@ -471,7 +502,7 @@
     const item = state.menu.find(menuItem => menuItem.id === $('#additionalItem').value);
     if (!item || getTodayOutOfStockIds().includes(item.id)) { $('#addOrderStatus').textContent = 'この商品は品切れのため追加できません。'; return; }
     const priority = { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 };
-    const manuallyAddedItem = { ...item, manuallyAdded: true };
+    const manuallyAddedItem = { ...item, manuallyAdded: true, recommendationReason: 'メニューから手動で追加' };
     const items = [...currentOrder.items, manuallyAddedItem].sort((a, b) => priority[a.category] - priority[b.category]);
     currentOrder = { ...currentOrder, items, total: currentOrder.total + manuallyAddedItem.price };
     $('#addToOrderDialog').close();

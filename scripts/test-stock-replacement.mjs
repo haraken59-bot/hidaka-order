@@ -78,4 +78,15 @@ test.setState({ menu: [porkBelly], history: [{ date: today, items: [{ name: pork
 const onlyAvailableRepeat = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: 'none', skewerCount: 1, wantFinish: false });
 assert.equal(onlyAvailableRepeat.items.some(item => item.id === 'pork-belly'), true);
 
+const largeBeer = { id: 'large-beer', name: '大瓶ビール', price: 726, category: 'drink', tags: ['飲み物'], actual: true };
+const expensiveSmall = { id: 'expensive-small', name: '高額な一品', price: 1540, category: 'small', tags: ['牛'], actual: true };
+const fiveSkewers = Array.from({ length: 5 }, (_, index) => ({ id: `skewer-${index}`, name: `串${index + 1}`, price: 198, category: 'skewer', tags: ['豚'], actual: true }));
+test.setState({ menu: [largeBeer, expensiveSmall, ...fiveSkewers], history: [], outOfStock: { date: today, ids: [] } });
+const softBudgetOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: largeBeer.id, skewerCount: 5, wantFinish: false });
+assert.equal(softBudgetOrder.items.filter(item => item.category === 'skewer').length, 5);
+assert.equal(softBudgetOrder.items.some(item => item.id === expensiveSmall.id), true);
+assert.equal(softBudgetOrder.total > softBudgetOrder.budget, true);
+assert.equal(softBudgetOrder.unavailable.some(message => message.startsWith('目安予算 ')), true);
+assert.match(softBudgetOrder.items.find(item => item.id === expensiveSmall.id).recommendationReason, /高額品/);
+
 console.log('品切れ品だけが置き換わり、未チェック品が維持されることを確認しました。');
