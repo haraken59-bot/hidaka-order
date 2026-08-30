@@ -11,6 +11,7 @@
   const FOOD_MOOD_TAGS = new Set(['pork', 'chicken', 'beef', 'seafood', 'vegetable', 'spicy']);
   const KEEP_SHOCHU_FEE = { id: 'keep-shochu-fee', name: '割代（焼酎キープ）', price: 220, category: 'fee', tags: [], actual: true };
   const ORDER_BUDGET = 3000;
+  const PENDING_REMINDER_MS = 10 * 60 * 1000;
   const fallbackMenu = [
     { id: 'highball', name: 'ハイボール', price: 380, category: 'drink', tags: ['drink', 'light'], actual: false },
     { id: 'beer', name: '生ビール（中）', price: 520, category: 'drink', tags: ['drink'], actual: false },
@@ -46,10 +47,11 @@
   function cloneMenu(menu) { return menu.map(item => ({ ...item, tags: [...item.tags] })); }
   function defaultState() {
     const menu = defaultMenu.map(item => ({ ...item, tags: item.tags.map(localizeTag) }));
-    return { defaultMenuVersion: activeDefaultMenuVersion, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', skewerCount: 3, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, outOfStock: { date: todayKey(), ids: [] } };
+    return { defaultMenuVersion: activeDefaultMenuVersion, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', skewerCount: 3, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, outOfStock: { date: todayKey(), ids: [] }, pendingOrder: null };
   }
   let state;
   let currentOrder = null;
+  let pendingReminderTimer = null;
 
   const $ = (selector, parent = document) => parent.querySelector(selector);
   const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
@@ -65,7 +67,7 @@
       const shouldInstallNewBaseMenu = saved.defaultMenuVersion !== activeDefaultMenuVersion;
       const menu = shouldInstallNewBaseMenu ? cloneMenu(base.menu) : saved.menu.map(normalizeMenuItem).filter(Boolean);
       const initialMenu = shouldInstallNewBaseMenu ? cloneMenu(base.initialMenu) : (Array.isArray(saved.initialMenu) ? saved.initialMenu.map(normalizeMenuItem).filter(Boolean) : cloneMenu(menu));
-      return { ...base, ...saved, defaultMenuVersion: activeDefaultMenuVersion, preferences: { ...base.preferences, ...(saved.preferences || {}), avoidRecent: true }, outOfStock, menu, initialMenu, history: saved.history.map(normalizeHistoryItem).filter(Boolean) };
+      return { ...base, ...saved, defaultMenuVersion: activeDefaultMenuVersion, preferences: { ...base.preferences, ...(saved.preferences || {}), avoidRecent: true }, outOfStock, menu, initialMenu, history: saved.history.map(normalizeHistoryItem).filter(Boolean), pendingOrder: normalizePendingOrder(saved.pendingOrder) };
     } catch { return defaultState(); }
   }
 
@@ -120,6 +122,37 @@
     const items = Array.isArray(order) ? order.map(item => typeof item === 'string' ? { name: item } : { ...item, name: item.name ?? item['料理名'] ?? item['メニュー名'] }).filter(item => item && item.name) : String(order || '').split(/[|｜]/).map(name => name.trim()).filter(Boolean).map(name => ({ name }));
     return date && items.length ? { id: String(raw.id || uid()), date, items } : null;
   }
+  function normalizePendingOrder(raw) {
+    if (!raw || !raw.order || !Array.isArray(raw.order.items)) return null;
+    const items = raw.order.items.map(item => {
+      const normalized = normalizeMenuItem(item);
+      if (!normalized) return null;
+      return {
+        ...normalized,
+        ...(item.manuallyAdded ? { manuallyAdded: true } : {}),
+        ...(item.recommendationReason ? { recommendationReason: String(item.recommendationReason) } : {})
+      };
+    }).filter(Boolean);
+    if (!items.length) return null;
+    const basePreferences = defaultState().preferences;
+    const preferences = { ...basePreferences, ...(raw.order.preferences || {}), budget: ORDER_BUDGET, avoidRecent: true };
+    preferences.moods = Array.isArray(preferences.moods) ? preferences.moods.map(String) : [];
+    preferences.skewerCount = Math.max(0, Math.round(Number(preferences.skewerCount) || 0));
+    const savedAtValue = String(raw.savedAt || '');
+    const savedAt = Number.isFinite(new Date(savedAtValue).getTime()) ? savedAtValue : new Date().toISOString();
+    return {
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(raw.date || '')) ? String(raw.date) : todayKey(),
+      savedAt,
+      order: {
+        items,
+        total: items.reduce((sum, item) => sum + item.price, 0),
+        budget: ORDER_BUDGET,
+        unavailable: Array.isArray(raw.order.unavailable) ? raw.order.unavailable.map(String) : [],
+        preferences,
+        excludedIds: Array.isArray(raw.order.excludedIds) ? raw.order.excludedIds.map(String) : []
+      }
+    };
+  }
   function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[character])); }
 
   function init() {
@@ -128,7 +161,7 @@
     renderMoodChoices();
     applyPreferences();
     saveState();
-    $('#preferenceForm').addEventListener('submit', event => { event.preventDefault(); currentOrder = createOrder(readPreferences()); renderOrder(currentOrder); });
+    $('#preferenceForm').addEventListener('submit', event => { event.preventDefault(); currentOrder = createOrder(readPreferences()); renderOrder(currentOrder, 'new'); });
     $('#skewerCount').addEventListener('input', syncSkewerCount);
     $('#mustShishito').addEventListener('change', () => {
       if ($('#mustShishito').checked && Number($('#skewerCount').value) === 0) $('#skewerCount').value = 1;
@@ -146,7 +179,11 @@
     $('#downloadHistoryTemplate').addEventListener('click', () => download('hidaka-history-sample.csv', '日付,注文\n2026-08-01,ハイボール|酢モツ|ししとう串|手羽先\n'));
     $('#resetData').addEventListener('click', resetData);
     $('#registerInitialMenu').addEventListener('click', registerInitialMenu);
+    $('#pendingOrderForm').addEventListener('submit', event => { event.preventDefault(); recordCurrentOrder(); });
+    $('#inspectPendingOrder').addEventListener('click', inspectPendingOrder);
+    $('#discardPendingOrder').addEventListener('click', discardPendingOrder);
     renderHistorySummary();
+    restorePendingOrder();
   }
 
   function applyPreferences() {
@@ -441,7 +478,71 @@
     return `${base}（串 ${order.preferences.skewerCount}本）`;
   }
 
-  function renderOrder(order) {
+  function clearPendingReminderTimer() {
+    if (pendingReminderTimer !== null) clearTimeout(pendingReminderTimer);
+    pendingReminderTimer = null;
+  }
+
+  function schedulePendingReminder(savedAt = new Date().toISOString()) {
+    clearPendingReminderTimer();
+    if (!state.pendingOrder) return;
+    const savedTime = new Date(savedAt).getTime();
+    const elapsed = Number.isFinite(savedTime) ? Math.max(0, Date.now() - savedTime) : 0;
+    const delay = Math.max(250, PENDING_REMINDER_MS - elapsed);
+    pendingReminderTimer = setTimeout(() => {
+      pendingReminderTimer = null;
+      openPendingOrderDialog();
+    }, delay);
+  }
+
+  function savePendingOrder(order, date = state.pendingOrder?.date || todayKey()) {
+    if (!order?.items.length) return;
+    const savedAt = new Date().toISOString();
+    state.pendingOrder = normalizePendingOrder({ date, savedAt, order });
+    saveState();
+    schedulePendingReminder(savedAt);
+  }
+
+  function openPendingOrderDialog() {
+    if (!state.pendingOrder) return;
+    const { date, order } = state.pendingOrder;
+    $('#pendingOrderDate').textContent = `${date}に作った注文案が、まだ注文履歴に記録されていません。`;
+    $('#pendingOrderSummary').innerHTML = `<strong>${order.items.length}品・合計 ${yen(order.total)}</strong><span>${order.items.map(item => escapeHtml(item.name)).join('・')}</span>`;
+    const dialog = $('#pendingOrderDialog');
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function restorePendingOrder() {
+    if (!state.pendingOrder) return;
+    currentOrder = state.pendingOrder.order;
+    renderOrder(currentOrder, false);
+    openPendingOrderDialog();
+    schedulePendingReminder(state.pendingOrder.savedAt);
+  }
+
+  function inspectPendingOrder() {
+    const dialog = $('#pendingOrderDialog');
+    if (dialog.open) dialog.close();
+    $('#result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    schedulePendingReminder();
+  }
+
+  function discardPendingOrder() {
+    state.pendingOrder = null;
+    saveState();
+    clearPendingReminderTimer();
+    const dialog = $('#pendingOrderDialog');
+    if (dialog.open) dialog.close();
+    const button = $('#recordOrder');
+    if (button) {
+      button.textContent = '今回は記録しません';
+      button.disabled = true;
+      button.classList.remove('pending-record-button');
+    }
+  }
+
+  function renderOrder(order, pendingMode = 'update') {
+    if (pendingMode) savePendingOrder(order, pendingMode === 'new' ? todayKey() : undefined);
     const isEstimate = order.items.some(item => !item.actual);
     const recommendedTotal = order.items.filter(item => !item.manuallyAdded).reduce((sum, item) => sum + item.price, 0);
     const budgetDifference = recommendedTotal - order.budget;
@@ -454,7 +555,7 @@
       return `<li class="order-item"><span class="order-number">${index + 1}</span><div class="order-details"><strong>${escapeHtml(item.name)}${moodMark}</strong><small>${CATEGORY_LABEL[item.category]}</small>${reason}</div><span class="order-price">${yen(item.price)}</span>${stockControl}</li>`;
     }).join('') : '<li class="order-item"><div class="order-details"><strong>この条件ではメニューを組めませんでした</strong><small>メニュー登録や品切れ状況を確認してください。</small></div></li>';
     const unavailable = order.unavailable.length ? `<p class="notice">${order.unavailable.map(escapeHtml).join('<br>')}</p>` : '';
-    $('#result').innerHTML = `<article class="result-card"><div class="result-top"><p>頼む順番まで、このままどうぞ</p><h2>${orderHeading(order)}</h2><div class="price-summary"><strong>${yen(order.total)}</strong><small>目安 ${yen(order.budget)}<br>${budgetStatus}${isEstimate ? '（価格は目安）' : ''}</small></div></div><ol class="order-list">${list}</ol>${unavailable}<div class="result-actions"><button class="secondary-button" type="button" id="regenerate">組み直す</button><button class="secondary-button" type="button" id="reconsiderOutOfStock" disabled>品切れを除いて組み直す</button><button class="secondary-button" type="button" id="addFromMenu">メニューから追加</button><button class="primary-button" type="button" id="recordOrder">この注文を記録</button></div></article>`;
+    $('#result').innerHTML = `<article class="result-card"><div class="result-top"><p>頼む順番まで、このままどうぞ</p><h2>${orderHeading(order)}</h2><div class="price-summary"><strong>${yen(order.total)}</strong><small>目安 ${yen(order.budget)}<br>${budgetStatus}${isEstimate ? '（価格は目安）' : ''}</small></div></div><ol class="order-list">${list}</ol>${unavailable}<div class="result-actions"><button class="secondary-button" type="button" id="regenerate">組み直す</button><button class="secondary-button" type="button" id="reconsiderOutOfStock" disabled>品切れを除いて組み直す</button><button class="secondary-button" type="button" id="addFromMenu">メニューから追加</button><button class="primary-button pending-record-button" type="button" id="recordOrder">この注文を記録</button></div></article>`;
     const reconsiderButton = $('#reconsiderOutOfStock');
     const stockChecks = $$('.out-of-stock-check');
     stockChecks.forEach(check => check.addEventListener('change', () => { reconsiderButton.disabled = !stockChecks.some(input => input.checked); }));
@@ -471,13 +572,21 @@
 
   function recordCurrentOrder() {
     if (!currentOrder?.items.length) return;
-    state.history.push({ id: uid(), date: new Date().toISOString().slice(0, 10), items: currentOrder.items.map(item => ({ name: item.name, price: item.price })) });
+    const orderDate = state.pendingOrder?.date || todayKey();
+    state.history.push({ id: uid(), date: orderDate, items: currentOrder.items.map(item => ({ name: item.name, price: item.price })) });
     state.history = state.history.slice(-100);
+    state.pendingOrder = null;
     saveState();
+    clearPendingReminderTimer();
+    const dialog = $('#pendingOrderDialog');
+    if (dialog.open) dialog.close();
     renderHistorySummary();
     const button = $('#recordOrder');
-    button.textContent = '記録しました ✓';
-    button.disabled = true;
+    if (button) {
+      button.textContent = '記録しました ✓';
+      button.disabled = true;
+      button.classList.remove('pending-record-button');
+    }
   }
 
   function openAddToOrderDialog() {
@@ -665,6 +774,7 @@
   }
   function resetData() {
     if (!confirm('メニューを登録済みの初期メニューへ戻し、注文履歴と設定を初期化しますか？')) return;
+    clearPendingReminderTimer();
     const base = defaultState();
     const initialMenu = cloneMenu(state.initialMenu?.length ? state.initialMenu : base.initialMenu);
     state = { ...base, menu: initialMenu, initialMenu: cloneMenu(initialMenu) }; currentOrder = null; saveState(); renderMoodChoices(); applyPreferences(); renderMenuEditor(); renderHistorySummary();

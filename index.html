@@ -177,6 +177,22 @@
       <div class="dialog-content history-list" id="historyList"></div>
     </dialog>
 
+    <dialog id="pendingOrderDialog" class="item-dialog pending-order-dialog">
+      <form id="pendingOrderForm">
+        <div>
+          <p class="eyebrow">未記録の注文があります</p>
+          <h2>この注文を記録しましたか？</h2>
+        </div>
+        <p class="dialog-note" id="pendingOrderDate"></p>
+        <div class="pending-order-summary" id="pendingOrderSummary"></div>
+        <div class="pending-order-actions">
+          <button class="secondary-button" type="button" id="inspectPendingOrder">内容を確認</button>
+          <button class="secondary-button" type="button" id="discardPendingOrder">今回は記録しない</button>
+          <button class="primary-button" type="submit">注文を記録する</button>
+        </div>
+      </form>
+    </dialog>
+
     <script src="app.js"></script>
   </body>
 </html>

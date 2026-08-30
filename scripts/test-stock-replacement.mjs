@@ -6,7 +6,7 @@ const appPath = new URL('../app.js', import.meta.url);
 const source = readFileSync(appPath, 'utf8');
 const instrumented = source.replace(
   /\n\s*boot\(\);\s*\n\}\)\(\);\s*$/,
-  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, regenerateOrderKeepingManualItems, setState: value => { state = value; } };\n})();\n'
+  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, regenerateOrderKeepingManualItems, normalizePendingOrder, setState: value => { state = value; } };\n})();\n'
 );
 assert.notEqual(instrumented, source, 'app.js のテスト準備に失敗しました。');
 
@@ -89,4 +89,24 @@ assert.equal(softBudgetOrder.total > softBudgetOrder.budget, true);
 assert.equal(softBudgetOrder.unavailable.some(message => message.startsWith('目安予算 ')), true);
 assert.match(softBudgetOrder.items.find(item => item.id === expensiveSmall.id).recommendationReason, /高額品/);
 
-console.log('品切れ品だけが置き換わり、未チェック品が維持されることを確認しました。');
+const normalizedPending = test.normalizePendingOrder({
+  date: '2026-08-20',
+  savedAt: '2026-08-20T10:00:00.000Z',
+  order: {
+    items: [{ ...manuallyAdded, recommendationReason: 'メニューから手動で追加' }],
+    total: 1,
+    budget: 9999,
+    unavailable: ['確認メッセージ'],
+    preferences: { ...preferences, budget: 9999, avoidRecent: false },
+    excludedIds: ['sold-out']
+  }
+});
+assert.equal(normalizedPending.date, '2026-08-20');
+assert.equal(normalizedPending.order.total, manuallyAdded.price);
+assert.equal(normalizedPending.order.budget, 3000);
+assert.equal(normalizedPending.order.preferences.avoidRecent, true);
+assert.equal(normalizedPending.order.items[0].manuallyAdded, true);
+assert.equal(normalizedPending.order.items[0].recommendationReason, 'メニューから手動で追加');
+assert.equal(test.normalizePendingOrder({ order: { items: [] } }), null);
+
+console.log('品切れ置換、注文条件、未記録注文の復元データを確認しました。');
