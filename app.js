@@ -4,7 +4,7 @@
   const STORAGE_KEY = 'hidaka-order-v1';
   const FULL_BACKUP_FORMAT = 'hidaka-order-full-backup';
   const FULL_BACKUP_SCHEMA_VERSION = 1;
-  const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-06-v1';
+  const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-31-v1';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
   const CATEGORY_LABEL = { drink: 'お酒', small: '小皿・つまみ', skewer: '串', main: '一品', finish: '締め', dessert: 'デザート', fee: '割代' };
   const MOOD_LABEL = { pork: '豚', chicken: '鶏', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの' };
