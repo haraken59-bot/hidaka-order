@@ -6,13 +6,26 @@ const appPath = new URL('../app.js', import.meta.url);
 const source = readFileSync(appPath, 'utf8');
 const instrumented = source.replace(
   /\n\s*boot\(\);\s*\n\}\)\(\);\s*$/,
-  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, regenerateOrderKeepingManualItems, normalizePendingOrder, createFullBackupPayload, normalizeFullBackup, setState: value => { state = value; } };\n})();\n'
+  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, regenerateOrderKeepingManualItems, normalizePendingOrder, normalizeMenuItem, normalizeDefaultMenuRows, buildMenuCsv, createFullBackupPayload, normalizeFullBackup, setState: value => { state = value; } };\n})();\n'
 );
 assert.notEqual(instrumented, source, 'app.js のテスト準備に失敗しました。');
 
 const context = vm.createContext({ console });
 vm.runInContext(instrumented, context, { filename: 'app.js' });
 const test = context.__hidakaTest;
+
+const stableIdItem = test.normalizeMenuItem({ メニューID: 'base-001', 料理名: '固定ID確認', 価格: 100, 分類: '小皿', タグ: '軽め', 実額: true });
+assert.equal(stableIdItem.id, 'base-001');
+assert.match(test.buildMenuCsv([stableIdItem]), /^メニューID,料理名,価格,分類,タグ,実額\nbase-001,/);
+const reorderedDefaults = test.normalizeDefaultMenuRows([
+  { メニューID: 'fixed-b', 料理名: '二番目から移動', 価格: 200, 分類: '小皿', タグ: '', 実額: true },
+  { メニューID: 'fixed-a', 料理名: '一番目から移動', 価格: 100, 分類: '小皿', タグ: '', 実額: true }
+]);
+assert.equal(reorderedDefaults.map(item => item.id).join(','), 'fixed-b,fixed-a');
+assert.throws(() => test.normalizeDefaultMenuRows([
+  { メニューID: 'duplicate', 料理名: '重複1', 価格: 100 },
+  { メニューID: 'duplicate', 料理名: '重複2', 価格: 200 }
+]), /重複/);
 
 const drink = { id: 'drink', name: '飲み物', price: 400, category: 'drink', tags: [], actual: true };
 const small = { id: 'small', name: '小皿', price: 300, category: 'small', tags: [], actual: true };
@@ -129,4 +142,4 @@ assert.equal(restoredBackup.state.history[0].items[0].price, small.price);
 assert.equal(restoredBackup.state.pendingOrder.order.items[0].manuallyAdded, true);
 assert.throws(() => test.normalizeFullBackup({ format: 'unknown', schemaVersion: 1, data: {} }), /完全バックアップではありません/);
 
-console.log('品切れ置換、注文条件、未記録注文、完全バックアップの復元データを確認しました。');
+console.log('固定ID、品切れ置換、注文条件、未記録注文、完全バックアップの復元データを確認しました。');

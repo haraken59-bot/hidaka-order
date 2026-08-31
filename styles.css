@@ -16,4 +16,6 @@ dialog { border:0; border-radius:18px; padding:0; width:min(600px,calc(100% - 24
 .field-help { margin:9px 0 0; color:var(--muted); font-size:12px; line-height:1.45; }
 .danger-zone .secondary-button { width:100%; margin:2px 0 8px; }
 .initial-data-status { min-height:19px; margin:0 0 10px!important; color:var(--green)!important; font-size:12px!important; font-weight:700; }
+.app-version-info { display:flex; flex-wrap:wrap; justify-content:center; gap:5px 16px; padding:2px 0 4px; color:var(--muted); font-size:11px; }
+.app-version-info strong { color:inherit; font-weight:700; }
 @media (max-width:480px) { .page-shell { padding:12px 12px 45px; }.site-header { padding:10px 12px; }.intro h2 { font-size:25px; }.panel { padding:17px; }.choice-row label { padding:7px 10px; }.import-grid,.backup-actions { grid-template-columns:1fr; }.install-button { padding:6px 8px; } }

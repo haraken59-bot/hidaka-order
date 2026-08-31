@@ -4,7 +4,9 @@
   const STORAGE_KEY = 'hidaka-order-v1';
   const FULL_BACKUP_FORMAT = 'hidaka-order-full-backup';
   const FULL_BACKUP_SCHEMA_VERSION = 1;
+  const APP_VERSION = '1.1.0';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-31-v1';
+  const MENU_DATA_UPDATED_AT = '2026-08-31';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
   const CATEGORY_LABEL = { drink: 'お酒', small: '小皿・つまみ', skewer: '串', main: '一品', finish: '締め', dessert: 'デザート', fee: '割代' };
   const MOOD_LABEL = { pork: '豚', chicken: '鶏', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの' };
@@ -78,13 +80,18 @@
       const response = await fetch('./data/hidaka-menu.csv', { cache: 'no-cache' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const rows = parseCsv(await response.text());
-      const menu = rows.map((row, index) => normalizeMenuItem({ ...row, id: `base-${String(index + 1).padStart(3, '0')}` })).filter(Boolean);
-      if (!menu.length) throw new Error('基本メニューが空です。');
-      return { menu, version: DEFAULT_MENU_VERSION };
+      return { menu: normalizeDefaultMenuRows(rows), version: DEFAULT_MENU_VERSION };
     } catch (error) {
       console.warn('基本メニューCSVを読み込めないため、内蔵メニューを使います。', error);
       return { menu: fallbackMenu, version: FALLBACK_MENU_VERSION };
     }
+  }
+
+  function normalizeDefaultMenuRows(rows) {
+    const menu = rows.map((row, index) => normalizeMenuItem({ ...row, id: row['メニューID'] || row.ID || `base-${String(index + 1).padStart(3, '0')}` })).filter(Boolean);
+    if (!menu.length) throw new Error('基本メニューが空です。');
+    if (new Set(menu.map(item => item.id)).size !== menu.length) throw new Error('基本メニューのメニューIDが重複しています。');
+    return menu;
   }
 
   function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
@@ -116,7 +123,7 @@
     const categoryMap = { 'お酒': 'drink', '飲み物': 'drink', '小皿': 'small', '小皿・つまみ': 'small', 'つまみ': 'small', '串': 'skewer', '焼き鳥': 'skewer', '一品': 'main', '主菜': 'main', '締め': 'finish', 'ご飯': 'finish', 'デザート': 'dessert', '甘味': 'dessert' };
     const category = CATEGORY_LABEL[categoryValue] ? categoryValue : (categoryMap[categoryValue] || 'small');
     const actualValue = raw.actual ?? raw['実額'] ?? raw['実売価格'];
-    return { id: String(raw.id || raw['ID'] || uid()), name, price: Math.round(price), category, tags: normalizeTags(raw.tags ?? raw['タグ']), actual: actualValue === true || String(actualValue).toLowerCase() === 'true' || String(actualValue) === '1' };
+    return { id: String(raw.id || raw['ID'] || raw['メニューID'] || uid()), name, price: Math.round(price), category, tags: normalizeTags(raw.tags ?? raw['タグ']), actual: actualValue === true || String(actualValue).toLowerCase() === 'true' || String(actualValue) === '1' };
   }
   function normalizeHistoryItem(raw) {
     const date = String(raw.date ?? raw['日付'] ?? '').slice(0, 10);
@@ -158,6 +165,8 @@
   function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[character])); }
 
   function init() {
+    $('#appVersion').textContent = `v${APP_VERSION}`;
+    $('#menuDataVersion').textContent = MENU_DATA_UPDATED_AT;
     $('#todayLabel').textContent = new Intl.DateTimeFormat('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' }).format(new Date());
     getTodayOutOfStockIds();
     renderMoodChoices();
@@ -839,13 +848,15 @@
     const text = String(value ?? '');
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   }
-  function downloadCurrentMenuBackup() {
+  function buildMenuCsv(menu) {
     const rows = [
-      ['料理名', '価格', '分類', 'タグ', '実額'],
-      ...state.menu.map(item => [item.name, item.price, item.category, item.tags.join('|'), item.actual])
+      ['メニューID', '料理名', '価格', '分類', 'タグ', '実額'],
+      ...menu.map(item => [item.id, item.name, item.price, item.category, item.tags.join('|'), item.actual])
     ];
-    const csv = `${rows.map(row => row.map(csvCell).join(',')).join('\n')}\n`;
-    download(`やきとり日高_メニューバックアップ_${todayKey()}.csv`, csv);
+    return `${rows.map(row => row.map(csvCell).join(',')).join('\n')}\n`;
+  }
+  function downloadCurrentMenuBackup() {
+    download(`やきとり日高_メニューバックアップ_${todayKey()}.csv`, buildMenuCsv(state.menu));
     $('#importStatus').textContent = `現在のメニュー ${state.menu.length}品をCSVに保存しました。`;
   }
   async function downloadDefaultMenu() {

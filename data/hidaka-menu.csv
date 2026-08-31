@@ -1,102 +1,102 @@
-料理名,価格,分類,タグ,実額
-漬物盛合せ（白菜漬＋大根酢）,330,small,vegetable|light,true
-珍味盛合せ（貝わさび＋イカ塩辛）,385,small,seafood|light,true
-島らっきょ,550,small,vegetable|light,true
-豆腐サラダ,715,small,vegetable,true
-タラチャンジャ,385,small,seafood|light,true
-焼 空豆（鹿児島産）,650,small,vegetable,true
-サバの塩焼,550,small,seafood,true
-ブリカマの塩焼,770,small,seafood,true
-小鉢① サバの南蛮漬け,330,small,seafood|light,true
-小鉢② たけのこの甘辛炒め,330,small,vegetable|light,true
-ニンニク皮巻串（塩 or タレ）,198,skewer,chicken|vegetable,true
-地鶏テール串（ぼんじり）（ニンニク塩 or タレ）,198,skewer,chicken,true
-なんこつ団子,198,skewer,chicken,true
-イカ下足串（塩 or タレ）,308,skewer,seafood,true
-赤センマイ串（ギアラ）牛の第4胃袋,253,skewer,beef,true
-菜の花の豚バラ巻き串,550,skewer,pork|vegetable,true
-ベーコンレタス巻き串,220,skewer,pork|vegetable,true
-ピーマン肉詰め串,242,skewer,vegetable,true
-やきいも串,220,skewer,vegetable,true
-種子島産・ニガダケの豚バラ巻,275,skewer,pork|vegetable,true
-山芋の豚バラ巻,275,skewer,pork|vegetable|light,true
-春蘭の牛バラ巻,330,skewer,pork|beef,true
-熊本産・甘とうのあぶり焼 おかかのせ,330,small,vegetable|light,true
-【冷】ぶっかけ 山かけ冷やしうどん,770,finish,finish|noodle,true
-【温】ばさらソース焼そば,770,finish,finish|noodle,true
-とり皮,143,skewer,chicken,true
-はつ（心臓）,143,skewer,chicken,true
-四つ身（もも肉）,165,skewer,chicken,true
-手羽先,165,skewer,chicken,true
-うずらの卵,198,skewer,chicken,true
-砂ずり,143,skewer,chicken,true
-きも（レバー）,143,skewer,chicken,true
-さんかく（なんこつ）,143,skewer,chicken,true
-つくね（手造り）,198,skewer,chicken,true
-牛さがり,308,skewer,beef,true
-バラ,165,skewer,pork,true
-バラなんこつ,220,skewer,pork,true
-のどなんこつ,198,skewer,pork,true
-しろ,165,skewer,pork,true
-みそさがり,165,skewer,pork,true
-あらびきウインナー,165,skewer,pork,true
-雲仙ハム,242,skewer,pork,true
-しそ巻き,220,skewer,,true
-オクラ巻,220,skewer,vegetable,true
-エノキ巻,220,skewer,vegetable,true
-プチトマトベーコン巻,242,skewer,pork|vegetable,true
-チーズベーコン巻,242,skewer,pork,true
-深ネギ,110,skewer,vegetable,true
-ピーマン,110,skewer,vegetable,true
-しいたけ,165,skewer,vegetable,true
-ししとう,165,skewer,vegetable,true
-ししゃも,165,skewer,seafood,true
-えび,198,skewer,seafood,true
-ざこ（きびなご）,220,skewer,seafood,true
-ホタテ,330,skewer,seafood,true
-茶豆（枝豆）,330,small,light|vegetable,true
-種子島産 落花生の塩ゆがき,440,small,light|vegetable,true
-冷奴,275,small,light|vegetable,true
-酢もつ,385,small,light|pork,true
-葉わさび,440,small,light|vegetable,true
-たたき・きゅうり,440,small,light|vegetable,true
-博多の定番・ごまさば,880,small,seafood,true
-地ダコ刺身,880,small,seafood,true
-馬刺し,1540,small,beef,true
-センマイ刺し（自家製辛味噌とポン酢で）,770,small,beef,true
-手造りのポテトサラダ,440,small,vegetable,true
-トマトスライス,385,small,vegetable|light,true
-銀ダラみりん,880,small,seafood,true
-エイヒレ,605,small,seafood|light,true
-めざし,440,small,seafood|light,true
-センポコ鉄板焼き,770,small,beef,true
-焼き豚足,550,small,pork,true
-にら玉,440,small,chicken|vegetable,true
-焼とうもろこし（1本）,660,small,vegetable,true
-じゃがバター,440,small,vegetable,true
-丸天焼き,275,small,light,true
-厚揚焼,330,small,vegetable,true
-お握り（しゃけ or 梅）1ヶ,220,finish,finish|rice,true
-焼きおにぎり 1ヶ,220,finish,finish|rice,true
-お茶漬け（しゃけ or 梅）,440,finish,finish|rice,true
-山かけ冷やしうどん,770,finish,finish|noodle,true
-あおさのみそ汁,220,finish,finish|soup|seafood,true
-なめこの赤だし,220,finish,finish|soup,true
-安納芋のやきいも＋バニラアイス,495,dessert,dessert|sweet|vegetable,true
-生ビール 小グラス,418,drink,drink|alcohol,true
-生ビール 中ジョッキ,605,drink,drink|alcohol,true
-生ビール 大ジョッキ,1078,drink,drink|alcohol,true
-サッポロラガービール（赤星）大瓶,726,drink,drink|alcohol,true
-エビスビール 大瓶,825,drink,drink|alcohol,true
-アサヒスーパードライ 大瓶,726,drink,drink|alcohol,true
-サッポロプレミアムアルコールフリー 小瓶,495,drink,drink|nonalcohol,true
-デュワーズ ハイボール,550,drink,drink|alcohol,true
-メガハイボール,858,drink,drink|alcohol,true
-コークハイ,605,drink,drink|alcohol,true
-ジンジャーハイ,605,drink,drink|alcohol,true
-デュワーズ 12年 水割り,825,drink,drink|alcohol,true
-デュワーズ 12年 ロック,935,drink,drink|alcohol,true
-デュワーズ 12年 ハイボール,990,drink,drink|alcohol,true
-もずく酢,330,small,light,false
-冷やしなす,495,small,vegetable,false
-秋刀魚の塩焼き,1100,main,seafood,true
+メニューID,料理名,価格,分類,タグ,実額
+base-001,漬物盛合せ（白菜漬＋大根酢）,330,small,vegetable|light,true
+base-002,珍味盛合せ（貝わさび＋イカ塩辛）,385,small,seafood|light,true
+base-003,島らっきょ,550,small,vegetable|light,true
+base-004,豆腐サラダ,715,small,vegetable,true
+base-005,タラチャンジャ,385,small,seafood|light,true
+base-006,焼 空豆（鹿児島産）,650,small,vegetable,true
+base-007,サバの塩焼,550,small,seafood,true
+base-008,ブリカマの塩焼,770,small,seafood,true
+base-009,小鉢① サバの南蛮漬け,330,small,seafood|light,true
+base-010,小鉢② たけのこの甘辛炒め,330,small,vegetable|light,true
+base-011,ニンニク皮巻串（塩 or タレ）,198,skewer,chicken|vegetable,true
+base-012,地鶏テール串（ぼんじり）（ニンニク塩 or タレ）,198,skewer,chicken,true
+base-013,なんこつ団子,198,skewer,chicken,true
+base-014,イカ下足串（塩 or タレ）,308,skewer,seafood,true
+base-015,赤センマイ串（ギアラ）牛の第4胃袋,253,skewer,beef,true
+base-016,菜の花の豚バラ巻き串,550,skewer,pork|vegetable,true
+base-017,ベーコンレタス巻き串,220,skewer,pork|vegetable,true
+base-018,ピーマン肉詰め串,242,skewer,vegetable,true
+base-019,やきいも串,220,skewer,vegetable,true
+base-020,種子島産・ニガダケの豚バラ巻,275,skewer,pork|vegetable,true
+base-021,山芋の豚バラ巻,275,skewer,pork|vegetable|light,true
+base-022,春蘭の牛バラ巻,330,skewer,pork|beef,true
+base-023,熊本産・甘とうのあぶり焼 おかかのせ,330,small,vegetable|light,true
+base-024,【冷】ぶっかけ 山かけ冷やしうどん,770,finish,finish|noodle,true
+base-025,【温】ばさらソース焼そば,770,finish,finish|noodle,true
+base-026,とり皮,143,skewer,chicken,true
+base-027,はつ（心臓）,143,skewer,chicken,true
+base-028,四つ身（もも肉）,165,skewer,chicken,true
+base-029,手羽先,165,skewer,chicken,true
+base-030,うずらの卵,198,skewer,chicken,true
+base-031,砂ずり,143,skewer,chicken,true
+base-032,きも（レバー）,143,skewer,chicken,true
+base-033,さんかく（なんこつ）,143,skewer,chicken,true
+base-034,つくね（手造り）,198,skewer,chicken,true
+base-035,牛さがり,308,skewer,beef,true
+base-036,バラ,165,skewer,pork,true
+base-037,バラなんこつ,220,skewer,pork,true
+base-038,のどなんこつ,198,skewer,pork,true
+base-039,しろ,165,skewer,pork,true
+base-040,みそさがり,165,skewer,pork,true
+base-041,あらびきウインナー,165,skewer,pork,true
+base-042,雲仙ハム,242,skewer,pork,true
+base-043,しそ巻き,220,skewer,,true
+base-044,オクラ巻,220,skewer,vegetable,true
+base-045,エノキ巻,220,skewer,vegetable,true
+base-046,プチトマトベーコン巻,242,skewer,pork|vegetable,true
+base-047,チーズベーコン巻,242,skewer,pork,true
+base-048,深ネギ,110,skewer,vegetable,true
+base-049,ピーマン,110,skewer,vegetable,true
+base-050,しいたけ,165,skewer,vegetable,true
+base-051,ししとう,165,skewer,vegetable,true
+base-052,ししゃも,165,skewer,seafood,true
+base-053,えび,198,skewer,seafood,true
+base-054,ざこ（きびなご）,220,skewer,seafood,true
+base-055,ホタテ,330,skewer,seafood,true
+base-056,茶豆（枝豆）,330,small,light|vegetable,true
+base-057,種子島産 落花生の塩ゆがき,440,small,light|vegetable,true
+base-058,冷奴,275,small,light|vegetable,true
+base-059,酢もつ,385,small,light|pork,true
+base-060,葉わさび,440,small,light|vegetable,true
+base-061,たたき・きゅうり,440,small,light|vegetable,true
+base-062,博多の定番・ごまさば,880,small,seafood,true
+base-063,地ダコ刺身,880,small,seafood,true
+base-064,馬刺し,1540,small,beef,true
+base-065,センマイ刺し（自家製辛味噌とポン酢で）,770,small,beef,true
+base-066,手造りのポテトサラダ,440,small,vegetable,true
+base-067,トマトスライス,385,small,vegetable|light,true
+base-068,銀ダラみりん,880,small,seafood,true
+base-069,エイヒレ,605,small,seafood|light,true
+base-070,めざし,440,small,seafood|light,true
+base-071,センポコ鉄板焼き,770,small,beef,true
+base-072,焼き豚足,550,small,pork,true
+base-073,にら玉,440,small,chicken|vegetable,true
+base-074,焼とうもろこし（1本）,660,small,vegetable,true
+base-075,じゃがバター,440,small,vegetable,true
+base-076,丸天焼き,275,small,light,true
+base-077,厚揚焼,330,small,vegetable,true
+base-078,お握り（しゃけ or 梅）1ヶ,220,finish,finish|rice,true
+base-079,焼きおにぎり 1ヶ,220,finish,finish|rice,true
+base-080,お茶漬け（しゃけ or 梅）,440,finish,finish|rice,true
+base-081,山かけ冷やしうどん,770,finish,finish|noodle,true
+base-082,あおさのみそ汁,220,finish,finish|soup|seafood,true
+base-083,なめこの赤だし,220,finish,finish|soup,true
+base-084,安納芋のやきいも＋バニラアイス,495,dessert,dessert|sweet|vegetable,true
+base-085,生ビール 小グラス,418,drink,drink|alcohol,true
+base-086,生ビール 中ジョッキ,605,drink,drink|alcohol,true
+base-087,生ビール 大ジョッキ,1078,drink,drink|alcohol,true
+base-088,サッポロラガービール（赤星）大瓶,726,drink,drink|alcohol,true
+base-089,エビスビール 大瓶,825,drink,drink|alcohol,true
+base-090,アサヒスーパードライ 大瓶,726,drink,drink|alcohol,true
+base-091,サッポロプレミアムアルコールフリー 小瓶,495,drink,drink|nonalcohol,true
+base-092,デュワーズ ハイボール,550,drink,drink|alcohol,true
+base-093,メガハイボール,858,drink,drink|alcohol,true
+base-094,コークハイ,605,drink,drink|alcohol,true
+base-095,ジンジャーハイ,605,drink,drink|alcohol,true
+base-096,デュワーズ 12年 水割り,825,drink,drink|alcohol,true
+base-097,デュワーズ 12年 ロック,935,drink,drink|alcohol,true
+base-098,デュワーズ 12年 ハイボール,990,drink,drink|alcohol,true
+base-099,もずく酢,330,small,light,false
+base-100,冷やしなす,495,small,vegetable,false
+base-101,秋刀魚の塩焼き,1100,main,seafood,true
