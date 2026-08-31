@@ -3,10 +3,10 @@
 
   const STORAGE_KEY = 'hidaka-order-v1';
   const FULL_BACKUP_FORMAT = 'hidaka-order-full-backup';
-  const FULL_BACKUP_SCHEMA_VERSION = 2;
+  const FULL_BACKUP_SCHEMA_VERSION = 3;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
-  const DATA_SCHEMA_VERSION = 2;
-  const APP_VERSION = '1.4.0';
+  const DATA_SCHEMA_VERSION = 3;
+  const APP_VERSION = '1.5.0';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-31-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-01';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
@@ -206,6 +206,76 @@
       ...(recommendationReason ? { recommendationReason } : {})
     };
   }
+  function normalizeBooleanOrNull(value) {
+    if (value === true || value === false) return value;
+    if (value === null || value === undefined || value === '') return null;
+    const normalized = String(value).trim().toLowerCase();
+    if (['true', '1', 'yes', 'on', 'はい', 'あり', '利用'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'off', 'いいえ', 'なし', '未利用'].includes(normalized)) return false;
+    return null;
+  }
+  function normalizeVisitContext(raw, menu = state?.menu || defaultMenu) {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    const budgetValue = source.budget ?? source['予算'];
+    const budgetNumber = budgetValue === null || budgetValue === undefined || budgetValue === '' ? NaN : Number(budgetValue);
+    const hungerValue = String(source.hunger ?? source['空腹度'] ?? '').trim().toLowerCase();
+    const hungerMap = { '軽め': 'light', '普通': 'normal', 'しっかり': 'hearty', 'がっつり': 'hearty' };
+    const hunger = ['light', 'normal', 'hearty'].includes(hungerValue) ? hungerValue : (hungerMap[hungerValue] || '');
+    const skewerValue = source.skewerCount ?? source['串本数'];
+    const skewerNumber = skewerValue === null || skewerValue === undefined || skewerValue === '' ? NaN : Number(skewerValue);
+    const moodValue = source.moods ?? source['今日の気分'] ?? source['食べたいジャンル'];
+    const moods = (Array.isArray(moodValue) ? moodValue : String(moodValue || '').split(/[|,、]/)).map(String).map(value => value.trim()).filter(Boolean);
+    const startingDrinkId = String(source.startingDrinkId ?? source['開始飲み物ID'] ?? '').trim();
+    const drinkMatch = startingDrinkId ? menu.find(item => item.id === startingDrinkId) : null;
+    const startingDrinkName = String(source.startingDrinkName ?? source['最初の飲み物'] ?? drinkMatch?.name ?? '').trim();
+    const stayDurationValue = source.stayDurationMinutes ?? source['滞在時間（分）'];
+    const stayDurationNumber = stayDurationValue === null || stayDurationValue === undefined || stayDurationValue === '' ? NaN : Number(stayDurationValue);
+    return {
+      budget: Number.isFinite(budgetNumber) && budgetNumber >= 0 ? Math.round(budgetNumber) : null,
+      hunger,
+      skewerCount: Number.isFinite(skewerNumber) && skewerNumber >= 0 ? Math.round(skewerNumber) : null,
+      moods,
+      startingDrinkId,
+      startingDrinkName,
+      mustShishito: normalizeBooleanOrNull(source.mustShishito ?? source['ししとう必須']),
+      wantFinish: normalizeBooleanOrNull(source.wantFinish ?? source['締め希望']),
+      avoidRecent: normalizeBooleanOrNull(source.avoidRecent ?? source['最近の重複回避']),
+      shochuKeepUsed: normalizeBooleanOrNull(source.shochuKeepUsed ?? source['焼酎キープ利用']),
+      visitStage: String(source.visitStage ?? source['来店段階'] ?? '').trim(),
+      plansSecondVenue: normalizeBooleanOrNull(source.plansSecondVenue ?? source['2軒目予定']),
+      seafoodRequested: normalizeBooleanOrNull(source.seafoodRequested ?? source['魚介希望']),
+      meatRequested: normalizeBooleanOrNull(source.meatRequested ?? source['肉希望']),
+      seasonalRequested: normalizeBooleanOrNull(source.seasonalRequested ?? source['旬のもの希望']),
+      stayDurationMinutes: Number.isFinite(stayDurationNumber) && stayDurationNumber >= 0 ? Math.round(stayDurationNumber) : null,
+      otherWishes: String(source.otherWishes ?? source['その他の希望'] ?? '').trim()
+    };
+  }
+  function createVisitContext(order) {
+    const preferences = order?.preferences && typeof order.preferences === 'object' ? order.preferences : {};
+    const selectedDrink = preferences.drink && preferences.drink !== 'none'
+      ? order.items?.find(item => item.category === 'drink' && (item.id === preferences.drink || matchesSelectedDrink(item, preferences.drink)))
+        || state.menu.find(item => item.category === 'drink' && (item.id === preferences.drink || matchesSelectedDrink(item, preferences.drink)))
+      : null;
+    return normalizeVisitContext({
+      budget: preferences.budget,
+      hunger: preferences.hunger,
+      skewerCount: preferences.skewerCount,
+      moods: preferences.moods,
+      startingDrinkId: selectedDrink?.id || '',
+      startingDrinkName: selectedDrink?.name || '',
+      mustShishito: preferences.mustShishito,
+      wantFinish: preferences.wantFinish,
+      avoidRecent: preferences.avoidRecent,
+      shochuKeepUsed: Boolean(order.items?.some(item => item.id === KEEP_SHOCHU_FEE.id || item.category === 'fee')),
+      visitStage: '',
+      plansSecondVenue: null,
+      seafoodRequested: null,
+      meatRequested: null,
+      seasonalRequested: null,
+      stayDurationMinutes: null,
+      otherWishes: ''
+    }, state.menu);
+  }
   function normalizeHistoryItem(raw, menu = state?.menu || defaultMenu) {
     if (!raw || typeof raw !== 'object') return null;
     const visitedAtInput = String(raw.visitedAt ?? raw['来店日時'] ?? '').trim();
@@ -226,7 +296,8 @@
     const total = Number.isFinite(rawTotal) && rawTotal >= 0 ? Math.round(rawTotal) : calculatedTotal;
     const recordedAtInput = String(raw.recordedAt ?? raw['記録日時'] ?? '').trim();
     const recordedAt = Number.isFinite(new Date(recordedAtInput).getTime()) ? recordedAtInput : '';
-    return { id, visitId, storeId, date, visitedAt, visitTimeKnown: raw.visitTimeKnown === true || hasVisitTime, recordedAt, total, items };
+    const context = normalizeVisitContext(raw.context ?? raw['状況'], menu);
+    return { id, visitId, storeId, date, visitedAt, visitTimeKnown: raw.visitTimeKnown === true || hasVisitTime, recordedAt, total, context, items };
   }
   function normalizePendingOrder(raw) {
     if (!raw || !raw.order || !Array.isArray(raw.order.items)) return null;
@@ -705,7 +776,7 @@
       source: item.manuallyAdded ? 'manual' : (item.category === 'fee' ? 'fixed' : 'recommended'),
       recommendationReason: item.recommendationReason || ''
     }));
-    return normalizeHistoryItem({ id, visitId, storeId: order.storeId || getActiveStoreId(), date, visitedAt, visitTimeKnown: hasVisitTime, recordedAt, total: order.total, items }, state.menu);
+    return normalizeHistoryItem({ id, visitId, storeId: order.storeId || getActiveStoreId(), date, visitedAt, visitTimeKnown: hasVisitTime, recordedAt, total: order.total, context: createVisitContext(order), items }, state.menu);
   }
 
   function recordCurrentOrder() {
