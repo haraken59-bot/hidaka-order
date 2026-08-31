@@ -16,7 +16,10 @@ const test = context.__hidakaTest;
 
 const stableIdItem = test.normalizeMenuItem({ メニューID: 'base-001', 料理名: '固定ID確認', 価格: 100, 分類: '小皿', タグ: '軽め', 実額: true });
 assert.equal(stableIdItem.id, 'base-001');
-assert.match(test.buildMenuCsv([stableIdItem]), /^メニューID,料理名,価格,分類,タグ,実額\nbase-001,/);
+assert.equal(stableIdItem.available, true);
+const pausedCsvItem = test.normalizeMenuItem({ メニューID: 'base-002', 料理名: '休止確認', 価格: 200, 分類: '小皿', タグ: '', 実額: true, 提供状態: '休止中' });
+assert.equal(pausedCsvItem.available, false);
+assert.match(test.buildMenuCsv([stableIdItem, pausedCsvItem]), /^メニューID,料理名,価格,分類,タグ,実額,提供状態\nbase-001,[^\n]+,提供中\nbase-002,[^\n]+,休止中\n$/);
 const reorderedDefaults = test.normalizeDefaultMenuRows([
   { メニューID: 'fixed-b', 料理名: '二番目から移動', 価格: 200, 分類: '小皿', タグ: '', 実額: true },
   { メニューID: 'fixed-a', 料理名: '一番目から移動', 価格: 100, 分類: '小皿', タグ: '', 実額: true }
@@ -31,6 +34,7 @@ const drink = { id: 'drink', name: '飲み物', price: 400, category: 'drink', t
 const small = { id: 'small', name: '小皿', price: 300, category: 'small', tags: [], actual: true };
 const soldOut = { id: 'sold-out', name: '品切れ串', price: 200, category: 'skewer', tags: ['鶏'], actual: true };
 const replacement = { id: 'replacement', name: '代わりの串', price: 180, category: 'skewer', tags: ['鶏'], actual: true };
+const pausedReplacement = { id: 'paused-replacement', name: '休止中の代わり串', price: 200, category: 'skewer', tags: ['鶏'], actual: true, available: false };
 const fee = { id: 'fee', name: '割代', price: 220, category: 'fee', tags: [], actual: true };
 const preferences = { budget: 3000, hunger: 'normal', skewerCount: 1, drink: 'drink', moods: [], mustShishito: false, wantFinish: false, avoidRecent: false };
 const originalOrder = { items: [drink, small, soldOut, fee], total: 1120, budget: 3000, unavailable: [], preferences, excludedIds: [] };
@@ -40,6 +44,10 @@ const replaced = test.replaceOutOfStockItems(originalOrder, ['sold-out'], ['sold
 assert.equal(replaced.items.map(item => item.id).join(','), 'drink,small,replacement,fee');
 assert.equal(replaced.total, 1100);
 assert.match(replaced.unavailable.join('\n'), /「品切れ串」を「代わりの串」に変更しました/);
+
+test.setState({ menu: [drink, small, soldOut, pausedReplacement], history: [] });
+const pausedReplacementExcluded = test.replaceOutOfStockItems(originalOrder, ['sold-out'], ['sold-out']);
+assert.equal(pausedReplacementExcluded.items.some(item => item.id === pausedReplacement.id), false);
 
 test.setState({ menu: [drink, small, soldOut], history: [] });
 const removed = test.replaceOutOfStockItems(originalOrder, ['sold-out'], ['sold-out']);
@@ -65,6 +73,13 @@ const meatSkewer = { id: 'meat-skewer', name: '豚肉串', price: 200, category:
 test.setState({ menu: [small, meatSkewer], history: [], outOfStock: { date: today, ids: [] } });
 const lightOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none', skewerCount: 1, wantFinish: false });
 assert.equal(lightOrder.items.some(item => item.id === 'meat-skewer'), true);
+
+const pausedDrink = { ...drink, id: 'paused-drink', name: '休止中の飲み物', available: false };
+const pausedSkewer = { ...meatSkewer, id: 'paused-skewer', name: '休止中の串', available: false };
+test.setState({ menu: [small, pausedDrink, pausedSkewer], history: [], outOfStock: { date: today, ids: [] } });
+const pausedItemsExcluded = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: pausedDrink.id, skewerCount: 1, wantFinish: false });
+assert.equal(pausedItemsExcluded.items.some(item => item.available === false), false);
+assert.match(pausedItemsExcluded.unavailable.join('\n'), /提供休止中/);
 
 const recentDish = { id: 'recent-dish', name: '最近食べた料理', price: 300, category: 'small', tags: [], actual: true };
 const freshDish = { id: 'fresh-dish', name: 'まだ食べていない料理', price: 300, category: 'small', tags: [], actual: true };
@@ -142,4 +157,4 @@ assert.equal(restoredBackup.state.history[0].items[0].price, small.price);
 assert.equal(restoredBackup.state.pendingOrder.order.items[0].manuallyAdded, true);
 assert.throws(() => test.normalizeFullBackup({ format: 'unknown', schemaVersion: 1, data: {} }), /完全バックアップではありません/);
 
-console.log('固定ID、品切れ置換、注文条件、未記録注文、完全バックアップの復元データを確認しました。');
+console.log('固定ID、提供休止、品切れ置換、注文条件、未記録注文、完全バックアップの復元データを確認しました。');

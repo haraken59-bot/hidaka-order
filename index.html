@@ -151,7 +151,7 @@
     <template id="menuRowTemplate">
       <div class="menu-row">
         <div><strong class="menu-name"></strong><small class="menu-meta"></small></div>
-        <div class="menu-row-actions"><button type="button" class="edit-menu-item">編集</button><button type="button" class="delete-menu-item" aria-label="削除">×</button></div>
+        <div class="menu-row-actions"><button type="button" class="edit-menu-item">編集</button><button type="button" class="availability-menu-item">休止</button></div>
       </div>
     </template>
 
@@ -168,6 +168,7 @@
         </label>
         <label>タグ <small>例: 豚|軽め|辛いもの</small><input id="itemTags" placeholder="豚|軽め" /></label>
         <label class="checkbox-line"><input id="itemActual" type="checkbox" /> 価格を実額として扱う</label>
+        <label class="checkbox-line"><input id="itemAvailable" type="checkbox" checked /> 提供中として扱う</label>
         <div class="form-actions"><button type="button" class="secondary-button" id="cancelMenuEdit">キャンセル</button><button class="primary-button" type="submit">保存</button></div>
       </form>
     </dialog>

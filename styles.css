@@ -18,4 +18,8 @@ dialog { border:0; border-radius:18px; padding:0; width:min(600px,calc(100% - 24
 .initial-data-status { min-height:19px; margin:0 0 10px!important; color:var(--green)!important; font-size:12px!important; font-weight:700; }
 .app-version-info { display:flex; flex-wrap:wrap; justify-content:center; gap:5px 16px; padding:2px 0 4px; color:var(--muted); font-size:11px; }
 .app-version-info strong { color:inherit; font-weight:700; }
+.menu-row.is-inactive { opacity:.68; }
+.menu-row.is-inactive .menu-name { text-decoration:line-through; }
+.menu-row-actions .availability-menu-item { color:var(--red); }
+.menu-row.is-inactive .availability-menu-item { color:var(--green); font-weight:700; }
 @media (max-width:480px) { .page-shell { padding:12px 12px 45px; }.site-header { padding:10px 12px; }.intro h2 { font-size:25px; }.panel { padding:17px; }.choice-row label { padding:7px 10px; }.import-grid,.backup-actions { grid-template-columns:1fr; }.install-button { padding:6px 8px; } }

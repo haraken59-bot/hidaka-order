@@ -4,7 +4,7 @@
   const STORAGE_KEY = 'hidaka-order-v1';
   const FULL_BACKUP_FORMAT = 'hidaka-order-full-backup';
   const FULL_BACKUP_SCHEMA_VERSION = 1;
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.2.0';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-31-v1';
   const MENU_DATA_UPDATED_AT = '2026-08-31';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
@@ -111,6 +111,14 @@
   function canonicalTag(tag) { return TAG_CANONICAL[String(tag || '').trim().toLowerCase()] || String(tag || '').trim().toLowerCase(); }
   function localizeTag(tag) { const original = String(tag || '').trim(); return TAG_LABEL[canonicalTag(original)] || original; }
   function hasTag(item, target) { return item.tags.some(tag => canonicalTag(tag) === canonicalTag(target)); }
+  function isMenuAvailable(item) { return item?.available !== false; }
+  function hasAvailabilityField(raw) { return raw && ['available', '提供中', '提供状態'].some(key => Object.prototype.hasOwnProperty.call(raw, key)); }
+  function normalizeAvailability(raw) {
+    const value = raw.available ?? raw['提供中'] ?? raw['提供状態'];
+    if (value === undefined || value === null || value === '') return true;
+    if (value === false) return false;
+    return !['false', '0', '休止', '休止中', '停止', '提供休止'].includes(String(value).trim().toLowerCase());
+  }
   function normalizeTags(tags) {
     const rawTags = Array.isArray(tags) ? tags : String(tags || '').split(/[|,、]/);
     return rawTags.map(localizeTag).filter(Boolean);
@@ -123,7 +131,7 @@
     const categoryMap = { 'お酒': 'drink', '飲み物': 'drink', '小皿': 'small', '小皿・つまみ': 'small', 'つまみ': 'small', '串': 'skewer', '焼き鳥': 'skewer', '一品': 'main', '主菜': 'main', '締め': 'finish', 'ご飯': 'finish', 'デザート': 'dessert', '甘味': 'dessert' };
     const category = CATEGORY_LABEL[categoryValue] ? categoryValue : (categoryMap[categoryValue] || 'small');
     const actualValue = raw.actual ?? raw['実額'] ?? raw['実売価格'];
-    return { id: String(raw.id || raw['ID'] || raw['メニューID'] || uid()), name, price: Math.round(price), category, tags: normalizeTags(raw.tags ?? raw['タグ']), actual: actualValue === true || String(actualValue).toLowerCase() === 'true' || String(actualValue) === '1' };
+    return { id: String(raw.id || raw['ID'] || raw['メニューID'] || uid()), name, price: Math.round(price), category, tags: normalizeTags(raw.tags ?? raw['タグ']), actual: actualValue === true || String(actualValue).toLowerCase() === 'true' || String(actualValue) === '1', available: normalizeAvailability(raw) };
   }
   function normalizeHistoryItem(raw) {
     const date = String(raw.date ?? raw['日付'] ?? '').slice(0, 10);
@@ -216,7 +224,7 @@
     const container = $('#moodChoices');
     const selected = new Set(state.preferences?.moods || []);
     const tags = new Map();
-    state.menu.forEach(item => item.tags.forEach(tag => {
+    state.menu.filter(isMenuAvailable).forEach(item => item.tags.forEach(tag => {
       const canonical = canonicalTag(tag);
       if (!FOOD_MOOD_TAGS.has(canonical)) return;
       const current = tags.get(canonical) || { label: localizeTag(tag), count: 0 };
@@ -255,7 +263,7 @@
 
   function renderDrinkOptions(selectedValue) {
     const select = $('#drink');
-    const drinks = state.menu.filter(item => item.category === 'drink');
+    const drinks = state.menu.filter(item => isMenuAvailable(item) && item.category === 'drink');
     const currentValue = selectedValue ?? select.value ?? state.preferences.drink;
     const directMatch = drinks.find(item => item.id === currentValue);
     const legacyMatch = drinks.find(item => matchesSelectedDrink(item, currentValue));
@@ -326,12 +334,11 @@
     const excluded = new Set(excludedIds);
     const selected = [];
     const add = (item, recommendationReason = '') => {
-      if (item && !excluded.has(item.id) && !selected.some(choice => choice.name === item.name)) selected.push({ ...item, recommendationReason });
+      if (item && isMenuAvailable(item) && !excluded.has(item.id) && !selected.some(choice => choice.name === item.name)) selected.push({ ...item, recommendationReason });
       return item;
     };
-    const findByName = name => state.menu.find(item => item.name === name);
     const recent = recentOrderStats();
-    const candidates = (category) => state.menu.filter(item => (!category || item.category === category) && !excluded.has(item.id)).filter(item => !selected.some(choice => choice.name === item.name));
+    const candidates = (category) => state.menu.filter(item => isMenuAvailable(item) && (!category || item.category === category) && !excluded.has(item.id)).filter(item => !selected.some(choice => choice.name === item.name));
     const score = (item, kind) => {
       let value = Math.random() * 0.8;
       if (p.moods.some(tag => hasTag(item, tag))) value += 5;
@@ -362,14 +369,16 @@
     if (p.drink !== 'none') {
       const selectedDrink = state.menu.find(item => item.id === p.drink && item.category === 'drink');
       if (!selectedDrink) unavailable.push('選択した飲み物がメニューに登録されていないため、入れられませんでした。');
+      else if (!isMenuAvailable(selectedDrink)) unavailable.push(`選択した飲み物「${selectedDrink.name}」は提供休止中のため、入れられませんでした。`);
       else if (excluded.has(selectedDrink.id)) unavailable.push(`選択した飲み物「${selectedDrink.name}」は品切れとして除外しました。`);
       else add(selectedDrink, '最初の飲み物として指定');
     }
     if (p.mustShishito) {
-      const shishito = findByName('ししとう串') || state.menu.find(item => /ししとう/.test(item.name) || hasTag(item, 'shishito'));
-      if (!shishito) unavailable.push('ししとうがメニューに登録されていないため、入れられませんでした。');
-      else if (excluded.has(shishito.id)) unavailable.push('ししとうは品切れとして除外しました。');
-      else add(shishito, '必須指定された串');
+      const registeredShishito = state.menu.find(item => item.name === 'ししとう串') || state.menu.find(item => /ししとう/.test(item.name) || hasTag(item, 'shishito'));
+      if (!registeredShishito) unavailable.push('ししとうがメニューに登録されていないため、入れられませんでした。');
+      else if (!isMenuAvailable(registeredShishito)) unavailable.push('ししとうは提供休止中のため、入れられませんでした。');
+      else if (excluded.has(registeredShishito.id)) unavailable.push('ししとうは品切れとして除外しました。');
+      else add(registeredShishito, '必須指定された串');
     }
 
     while (selected.filter(item => item.category === 'skewer').length < p.skewerCount) {
@@ -432,6 +441,7 @@
 
     const findReplacement = (original) => {
       const available = state.menu.filter(item =>
+        isMenuAvailable(item) &&
         !excluded.has(String(item.id)) &&
         !usedIds.has(String(item.id)) &&
         !usedNames.has(item.name) &&
@@ -605,7 +615,7 @@
   function openAddToOrderDialog() {
     if (!currentOrder) return;
     const excludedIds = new Set(getTodayOutOfStockIds());
-    const choices = state.menu.filter(item => !excludedIds.has(item.id));
+    const choices = state.menu.filter(item => isMenuAvailable(item) && !excludedIds.has(item.id));
     const select = $('#additionalItem');
     select.replaceChildren(...choices.map(item => {
       const option = document.createElement('option');
@@ -622,7 +632,7 @@
     event.preventDefault();
     if (!currentOrder) return;
     const item = state.menu.find(menuItem => menuItem.id === $('#additionalItem').value);
-    if (!item || getTodayOutOfStockIds().includes(item.id)) { $('#addOrderStatus').textContent = 'この商品は品切れのため追加できません。'; return; }
+    if (!item || !isMenuAvailable(item) || getTodayOutOfStockIds().includes(item.id)) { $('#addOrderStatus').textContent = 'この商品は休止中または品切れのため追加できません。'; return; }
     const priority = { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 };
     const manuallyAddedItem = { ...item, manuallyAdded: true, recommendationReason: 'メニューから手動で追加' };
     const items = [...currentOrder.items, manuallyAddedItem].sort((a, b) => priority[a.category] - priority[b.category]);
@@ -661,16 +671,23 @@
 
   function openDataDialog() { renderMenuEditor(); $('#dataDialog').showModal(); }
   function renderMenuEditor() {
-    $('#menuCount').textContent = `${state.menu.length}品`;
+    const availableCount = state.menu.filter(isMenuAvailable).length;
+    $('#menuCount').textContent = `提供中 ${availableCount}品・休止 ${state.menu.length - availableCount}品`;
     const editor = $('#menuEditor');
     editor.innerHTML = '';
     const template = $('#menuRowTemplate');
-    state.menu.slice().sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name, 'ja')).forEach(item => {
+    state.menu.slice().sort((a, b) => Number(isMenuAvailable(b)) - Number(isMenuAvailable(a)) || a.category.localeCompare(b.category) || a.name.localeCompare(b.name, 'ja')).forEach(item => {
       const row = template.content.cloneNode(true);
+      const available = isMenuAvailable(item);
+      const rowElement = $('.menu-row', row);
+      rowElement.classList.toggle('is-inactive', !available);
       $('.menu-name', row).textContent = item.name;
-      $('.menu-meta', row).textContent = `${yen(item.price)} ・ ${CATEGORY_LABEL[item.category]}${item.actual ? '' : ' ・ 目安'}`;
+      $('.menu-meta', row).textContent = `${yen(item.price)} ・ ${CATEGORY_LABEL[item.category]}${item.actual ? '' : ' ・ 目安'}${available ? '' : ' ・ 休止中'}`;
       $('.edit-menu-item', row).addEventListener('click', () => openMenuForm(item));
-      $('.delete-menu-item', row).addEventListener('click', () => deleteMenuItem(item));
+      const availabilityButton = $('.availability-menu-item', row);
+      availabilityButton.textContent = available ? '休止' : '再開';
+      availabilityButton.setAttribute('aria-label', `${item.name}を${available ? '提供休止' : '提供再開'}`);
+      availabilityButton.addEventListener('click', () => toggleMenuAvailability(item));
       editor.append(row);
     });
   }
@@ -683,21 +700,26 @@
     $('#itemCategory').value = item?.category || 'small';
     $('#itemTags').value = item?.tags.join('|') || '';
     $('#itemActual').checked = item?.actual || false;
+    $('#itemAvailable').checked = isMenuAvailable(item);
     $('#menuItemDialog').showModal();
     $('#itemName').focus();
   }
   function saveMenuItem(event) {
     event.preventDefault();
-    const item = normalizeMenuItem({ id: $('#itemId').value || uid(), name: $('#itemName').value, price: $('#itemPrice').value, category: $('#itemCategory').value, tags: $('#itemTags').value, actual: $('#itemActual').checked });
+    const item = normalizeMenuItem({ id: $('#itemId').value || uid(), name: $('#itemName').value, price: $('#itemPrice').value, category: $('#itemCategory').value, tags: $('#itemTags').value, actual: $('#itemActual').checked, available: $('#itemAvailable').checked });
     if (!item) return;
     const index = state.menu.findIndex(menuItem => menuItem.id === item.id);
     if (index >= 0) state.menu[index] = item; else state.menu.push(item);
-    saveState(); renderMenuEditor(); renderDrinkOptions(); renderMoodChoices(); $('#menuItemDialog').close();
+    state.preferences.drink = renderDrinkOptions(state.preferences.drink);
+    saveState(); renderMenuEditor(); renderMoodChoices(); $('#menuItemDialog').close();
   }
-  function deleteMenuItem(item) {
-    if (!confirm(`「${item.name}」をメニューから削除しますか？`)) return;
-    state.menu = state.menu.filter(menuItem => menuItem.id !== item.id);
-    saveState(); renderMenuEditor(); renderDrinkOptions(); renderMoodChoices();
+  function toggleMenuAvailability(item) {
+    const nextAvailable = !isMenuAvailable(item);
+    const action = nextAvailable ? '提供を再開' : '提供休止に変更';
+    if (!confirm(`「${item.name}」を${action}しますか？${nextAvailable ? '' : '\n休止中は注文候補に表示されません。'}`)) return;
+    item.available = nextAvailable;
+    state.preferences.drink = renderDrinkOptions(state.preferences.drink);
+    saveState(); renderMenuEditor(); renderMoodChoices();
   }
 
   async function importFile(event) {
@@ -739,11 +761,12 @@
     const target = requestedTarget === 'auto' ? (isBundle ? 'bundle' : hasMenuFields ? 'menu' : 'history') : requestedTarget;
     let importedMenu = 0; let importedHistory = 0;
     const putMenu = entries => {
-      const valid = entries.map(normalizeMenuItem).filter(Boolean);
+      const normalizedEntries = entries.map(raw => ({ item: normalizeMenuItem(raw), hasAvailability: hasAvailabilityField(raw) })).filter(entry => entry.item);
+      const valid = normalizedEntries.map(entry => entry.item);
       importedMenu += valid.length;
       if (!valid.length) throw new Error('メニューとして使える「料理名」と「価格」が見つかりません');
       if (mode === 'replace') state.menu = [];
-      valid.forEach(item => { const index = state.menu.findIndex(existing => existing.name === item.name); if (index >= 0) state.menu[index] = { ...state.menu[index], ...item, id: state.menu[index].id }; else state.menu.push(item); });
+      normalizedEntries.forEach(({ item, hasAvailability }) => { const index = state.menu.findIndex(existing => existing.name === item.name); if (index >= 0) state.menu[index] = { ...state.menu[index], ...item, id: state.menu[index].id, available: hasAvailability ? item.available : isMenuAvailable(state.menu[index]) }; else state.menu.push(item); });
     };
     const putHistory = entries => {
       const valid = entries.map(normalizeHistoryItem).filter(Boolean);
@@ -850,8 +873,8 @@
   }
   function buildMenuCsv(menu) {
     const rows = [
-      ['メニューID', '料理名', '価格', '分類', 'タグ', '実額'],
-      ...menu.map(item => [item.id, item.name, item.price, item.category, item.tags.join('|'), item.actual])
+      ['メニューID', '料理名', '価格', '分類', 'タグ', '実額', '提供状態'],
+      ...menu.map(item => [item.id, item.name, item.price, item.category, item.tags.join('|'), item.actual, isMenuAvailable(item) ? '提供中' : '休止中'])
     ];
     return `${rows.map(row => row.map(csvCell).join(',')).join('\n')}\n`;
   }
