@@ -3,8 +3,10 @@
 
   const STORAGE_KEY = 'hidaka-order-v1';
   const FULL_BACKUP_FORMAT = 'hidaka-order-full-backup';
-  const FULL_BACKUP_SCHEMA_VERSION = 1;
-  const APP_VERSION = '1.3.0';
+  const FULL_BACKUP_SCHEMA_VERSION = 2;
+  const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
+  const DATA_SCHEMA_VERSION = 2;
+  const APP_VERSION = '1.4.0';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-31-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-01';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
@@ -57,7 +59,7 @@
     const stores = cloneStores(defaultStores);
     const activeStoreId = stores.some(store => store.id === DEFAULT_STORE_ID) ? DEFAULT_STORE_ID : stores[0].id;
     const menu = defaultMenu.map(item => ({ ...item, storeId: item.storeId || activeStoreId, tags: item.tags.map(localizeTag) }));
-    return { defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', skewerCount: 3, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, outOfStock: { date: todayKey(), ids: [] }, pendingOrder: null };
+    return { dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', skewerCount: 3, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, outOfStock: { date: todayKey(), ids: [] }, pendingOrder: null };
   }
   let state;
   let currentOrder = null;
@@ -81,7 +83,7 @@
       const shouldInstallNewBaseMenu = saved.defaultMenuVersion !== activeDefaultMenuVersion;
       const menu = shouldInstallNewBaseMenu ? cloneMenu(base.menu) : saved.menu.map(normalizeMenuItem).filter(Boolean);
       const initialMenu = shouldInstallNewBaseMenu ? cloneMenu(base.initialMenu) : (Array.isArray(saved.initialMenu) ? saved.initialMenu.map(normalizeMenuItem).filter(Boolean) : cloneMenu(menu));
-      return { ...base, ...saved, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, preferences: { ...base.preferences, ...(saved.preferences || {}), avoidRecent: true }, outOfStock, menu, initialMenu, history: saved.history.map(normalizeHistoryItem).filter(Boolean), pendingOrder: normalizePendingOrder(saved.pendingOrder) };
+      return { ...base, ...saved, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, preferences: { ...base.preferences, ...(saved.preferences || {}), avoidRecent: true }, outOfStock, menu, initialMenu, history: saved.history.map(entry => normalizeHistoryItem(entry, menu)).filter(Boolean), pendingOrder: normalizePendingOrder(saved.pendingOrder) };
     } catch { return defaultState(); }
   }
 
@@ -130,7 +132,7 @@
     saveState();
     return state.outOfStock.ids;
   }
-  function uid() { return `item-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+  function uid(prefix = 'item') { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
   function normalizeStore(raw) {
     if (!raw || typeof raw !== 'object') return null;
     const id = String(raw.id ?? raw.storeId ?? raw['店舗ID'] ?? '').trim();
@@ -171,12 +173,60 @@
     const storeId = String(raw.storeId ?? raw['店舗ID'] ?? DEFAULT_STORE_ID).trim() || DEFAULT_STORE_ID;
     return { id: String(raw.id || raw['ID'] || raw['メニューID'] || uid()), storeId, name, price: Math.round(price), category, tags: normalizeTags(raw.tags ?? raw['タグ']), actual: actualValue === true || String(actualValue).toLowerCase() === 'true' || String(actualValue) === '1', available: normalizeAvailability(raw) };
   }
-  function normalizeHistoryItem(raw) {
-    const date = String(raw.date ?? raw['日付'] ?? '').slice(0, 10);
-    const order = raw.items ?? raw.order ?? raw['注文'] ?? raw['注文内容'];
-    const items = Array.isArray(order) ? order.map(item => typeof item === 'string' ? { name: item } : { ...item, name: item.name ?? item['料理名'] ?? item['メニュー名'] }).filter(item => item && item.name) : String(order || '').split(/[|｜]/).map(name => name.trim()).filter(Boolean).map(name => ({ name }));
+  function historyUnitPrice(item) {
+    const value = item?.unitPrice ?? item?.price;
+    return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Math.round(Number(value)) : null;
+  }
+  function normalizeHistoryLine(raw, index, historyId, storeId, menu) {
+    const source = typeof raw === 'string' ? { name: raw } : (raw && typeof raw === 'object' ? raw : {});
+    const name = String(source.name ?? source['料理名'] ?? source['メニュー名'] ?? '').trim();
+    if (!name) return null;
+    const menuMatch = menu.find(item => item.storeId === storeId && historyNameKey(item.name) === historyNameKey(name))
+      || menu.find(item => historyNameKey(item.name) === historyNameKey(name));
+    const menuId = String(source.menuId ?? source['メニューID'] ?? menuMatch?.id ?? '').trim();
+    const orderIndexValue = Number(source.orderIndex ?? source['注文順'] ?? index + 1);
+    const orderIndex = Number.isFinite(orderIndexValue) && orderIndexValue > 0 ? Math.round(orderIndexValue) : index + 1;
+    const quantityValue = Number(source.quantity ?? source['数量'] ?? 1);
+    const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? Math.round(quantityValue) : 1;
+    const rawPrice = source.unitPrice ?? source.price ?? source['注文時価格'] ?? source['価格'];
+    const unitPrice = rawPrice !== null && rawPrice !== undefined && rawPrice !== '' && Number.isFinite(Number(rawPrice)) && Number(rawPrice) >= 0 ? Math.round(Number(rawPrice)) : null;
+    const sourceValue = String(source.source ?? source['追加区分'] ?? (source.manuallyAdded ? 'manual' : 'legacy')).toLowerCase();
+    const selectionSource = ['recommended', 'manual', 'fixed', 'legacy'].includes(sourceValue) ? sourceValue : 'legacy';
+    const recommendationReason = String(source.recommendationReason ?? source['選定理由'] ?? '').trim();
+    return {
+      lineId: String(source.lineId ?? source['注文明細ID'] ?? `${historyId}-line-${orderIndex}`),
+      menuId,
+      name,
+      orderIndex,
+      quantity,
+      unitPrice,
+      price: unitPrice,
+      subtotal: unitPrice === null ? null : unitPrice * quantity,
+      source: selectionSource,
+      ...(recommendationReason ? { recommendationReason } : {})
+    };
+  }
+  function normalizeHistoryItem(raw, menu = state?.menu || defaultMenu) {
+    if (!raw || typeof raw !== 'object') return null;
+    const visitedAtInput = String(raw.visitedAt ?? raw['来店日時'] ?? '').trim();
+    const date = String(raw.date ?? raw['日付'] ?? visitedAtInput).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    const id = String(raw.id ?? raw.orderHistoryId ?? raw['注文履歴ID'] ?? uid('history'));
     const storeId = String(raw.storeId ?? raw['店舗ID'] ?? DEFAULT_STORE_ID).trim() || DEFAULT_STORE_ID;
-    return date && items.length ? { id: String(raw.id || uid()), storeId, date, items } : null;
+    const visitId = String(raw.visitId ?? raw['来店ID'] ?? `visit-${id}`);
+    const hasVisitTime = /^\d{4}-\d{2}-\d{2}T/.test(visitedAtInput) && Number.isFinite(new Date(visitedAtInput).getTime());
+    const visitedAt = hasVisitTime ? visitedAtInput : `${date}T00:00:00+09:00`;
+    const order = raw.items ?? raw.order ?? raw['注文'] ?? raw['注文内容'];
+    const rawItems = Array.isArray(order) ? order : String(order || '').split(/[|｜]/).map(name => name.trim()).filter(Boolean);
+    const items = rawItems.map((item, index) => normalizeHistoryLine(item, index, id, storeId, menu)).filter(Boolean).sort((a, b) => a.orderIndex - b.orderIndex);
+    if (!items.length) return null;
+    const calculatedTotal = items.every(item => historyUnitPrice(item) !== null) ? items.reduce((sum, item) => sum + historyUnitPrice(item) * item.quantity, 0) : null;
+    const totalInput = raw.total ?? raw['会計金額'];
+    const rawTotal = totalInput === null || totalInput === undefined || totalInput === '' ? NaN : Number(totalInput);
+    const total = Number.isFinite(rawTotal) && rawTotal >= 0 ? Math.round(rawTotal) : calculatedTotal;
+    const recordedAtInput = String(raw.recordedAt ?? raw['記録日時'] ?? '').trim();
+    const recordedAt = Number.isFinite(new Date(recordedAtInput).getTime()) ? recordedAtInput : '';
+    return { id, visitId, storeId, date, visitedAt, visitTimeKnown: raw.visitTimeKnown === true || hasVisitTime, recordedAt, total, items };
   }
   function normalizePendingOrder(raw) {
     if (!raw || !raw.order || !Array.isArray(raw.order.items)) return null;
@@ -638,10 +688,32 @@
     $('#recordOrder').addEventListener('click', recordCurrentOrder);
   }
 
+  function createHistoryRecord(order, date = todayKey(), pendingSavedAt = '') {
+    const id = uid('history');
+    const visitId = uid('visit');
+    const recordedAt = new Date().toISOString();
+    const savedAtDate = String(pendingSavedAt || '').slice(0, 10);
+    const hasVisitTime = savedAtDate === date && Number.isFinite(new Date(pendingSavedAt).getTime());
+    const visitedAt = hasVisitTime ? pendingSavedAt : `${date}T00:00:00+09:00`;
+    const items = order.items.map((item, index) => ({
+      lineId: `${id}-line-${index + 1}`,
+      menuId: item.id || '',
+      name: item.name,
+      orderIndex: index + 1,
+      quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
+      unitPrice: item.price,
+      source: item.manuallyAdded ? 'manual' : (item.category === 'fee' ? 'fixed' : 'recommended'),
+      recommendationReason: item.recommendationReason || ''
+    }));
+    return normalizeHistoryItem({ id, visitId, storeId: order.storeId || getActiveStoreId(), date, visitedAt, visitTimeKnown: hasVisitTime, recordedAt, total: order.total, items }, state.menu);
+  }
+
   function recordCurrentOrder() {
     if (!currentOrder?.items.length) return;
     const orderDate = state.pendingOrder?.date || todayKey();
-    state.history.push({ id: uid(), storeId: currentOrder.storeId || getActiveStoreId(), date: orderDate, items: currentOrder.items.map(item => ({ name: item.name, price: item.price })) });
+    const historyRecord = createHistoryRecord(currentOrder, orderDate, state.pendingOrder?.savedAt || '');
+    if (!historyRecord) return;
+    state.history.push(historyRecord);
     state.history = state.history.slice(-100);
     state.pendingOrder = null;
     saveState();
@@ -701,12 +773,16 @@
       list.innerHTML = '<p class="history-empty">まだ注文履歴はありません。</p>';
     } else {
       list.innerHTML = history.map((entry, index) => {
-        const hasPrices = entry.items.length > 0 && entry.items.every(item => Number.isFinite(Number(item.price)));
-        const total = hasPrices ? entry.items.reduce((sum, item) => sum + Number(item.price), 0) : null;
-        const summary = `${entry.items.length}品・${hasPrices ? `合計 ${yen(total)}` : '金額記録なし'}`;
+        const hasPrices = entry.items.length > 0 && entry.items.every(item => historyUnitPrice(item) !== null);
+        const calculatedTotal = hasPrices ? entry.items.reduce((sum, item) => sum + historyUnitPrice(item) * item.quantity, 0) : null;
+        const total = Number.isFinite(Number(entry.total)) && entry.total !== null ? Number(entry.total) : calculatedTotal;
+        const totalQuantity = entry.items.reduce((sum, item) => sum + item.quantity, 0);
+        const summary = `${totalQuantity}品・${total !== null ? `合計 ${yen(total)}` : '金額記録なし'}`;
         const items = entry.items.map(item => {
-          const price = Number.isFinite(Number(item.price)) ? `<span>${yen(Number(item.price))}</span>` : '';
-          return `<li>${escapeHtml(item.name)}${price}</li>`;
+          const unitPrice = historyUnitPrice(item);
+          const quantity = item.quantity > 1 ? ` ×${item.quantity}` : '';
+          const price = unitPrice !== null ? `<span>${yen(unitPrice * item.quantity)}</span>` : '';
+          return `<li>${escapeHtml(item.name)}${quantity}${price}</li>`;
         }).join('');
         return `<article class="history-entry"><div class="history-entry-header"><strong>${escapeHtml(entry.date)}${index === 0 ? '（前回）' : ''}</strong><span>${summary}</span></div><ol>${items}</ol></article>`;
       }).join('');
@@ -816,11 +892,11 @@
       normalizedEntries.forEach(({ item, hasAvailability }) => { const index = state.menu.findIndex(existing => existing.storeId === item.storeId && existing.name === item.name); if (index >= 0) state.menu[index] = { ...state.menu[index], ...item, id: state.menu[index].id, available: hasAvailability ? item.available : isMenuAvailable(state.menu[index]) }; else state.menu.push(item); });
     };
     const putHistory = entries => {
-      const valid = entries.map(normalizeHistoryItem).filter(Boolean);
+      const valid = entries.map(entry => normalizeHistoryItem(entry, state.menu)).filter(Boolean);
       importedHistory += valid.length;
       if (!valid.length) throw new Error('履歴として使える「日付」と「注文」が見つかりません');
       if (mode === 'replace') state.history = [];
-      valid.forEach(item => { const index = state.history.findIndex(existing => existing.storeId === item.storeId && existing.date === item.date && existing.items.map(i => i.name).join('|') === item.items.map(i => i.name).join('|')); if (index < 0) state.history.push(item); });
+      valid.forEach(item => { const index = state.history.findIndex(existing => existing.id === item.id || (existing.storeId === item.storeId && existing.date === item.date && existing.items.map(i => i.name).join('|') === item.items.map(i => i.name).join('|'))); if (index < 0) state.history.push(item); });
     };
     if (target === 'bundle') { if (Array.isArray(data.menu)) putMenu(data.menu); if (Array.isArray(data.history)) putHistory(data.history); }
     else if (target === 'menu') putMenu(Array.isArray(data?.menu) ? data.menu : rows);
@@ -840,7 +916,8 @@
 
   function normalizeFullBackup(raw) {
     if (!raw || raw.format !== FULL_BACKUP_FORMAT) throw new Error('日高オーダーの完全バックアップではありません');
-    if (Number(raw.schemaVersion) !== FULL_BACKUP_SCHEMA_VERSION) throw new Error(`未対応のバックアップ形式です（バージョン ${raw.schemaVersion ?? '不明'}）`);
+    const schemaVersion = Number(raw.schemaVersion);
+    if (!Number.isInteger(schemaVersion) || schemaVersion < MIN_SUPPORTED_BACKUP_SCHEMA_VERSION || schemaVersion > FULL_BACKUP_SCHEMA_VERSION) throw new Error(`未対応のバックアップ形式です（バージョン ${raw.schemaVersion ?? '不明'}）`);
     const saved = raw.data;
     if (!saved || !Array.isArray(saved.menu) || !Array.isArray(saved.initialMenu) || !Array.isArray(saved.history)) throw new Error('バックアップに必要なデータが不足しています');
     const base = defaultState();
@@ -850,7 +927,7 @@
     const activeStoreId = stores.some(store => store.id === requestedStoreId) ? requestedStoreId : base.activeStoreId;
     const menu = saved.menu.map(normalizeMenuItem).filter(Boolean);
     const initialMenu = saved.initialMenu.map(normalizeMenuItem).filter(Boolean);
-    const history = saved.history.map(normalizeHistoryItem).filter(Boolean);
+    const history = saved.history.map(entry => normalizeHistoryItem(entry, menu)).filter(Boolean);
     if (menu.length !== saved.menu.length || initialMenu.length !== saved.initialMenu.length || history.length !== saved.history.length) throw new Error('壊れているメニューまたは注文履歴が含まれています');
     const preferences = { ...base.preferences, ...(saved.preferences || {}), budget: ORDER_BUDGET, avoidRecent: true };
     preferences.moods = Array.isArray(preferences.moods) ? preferences.moods.map(String) : [];
@@ -863,7 +940,7 @@
     const exportedAt = String(raw.exportedAt || '');
     return {
       exportedAt: Number.isFinite(new Date(exportedAt).getTime()) ? exportedAt : '',
-      state: { ...base, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu, history, preferences, outOfStock, pendingOrder }
+      state: { ...base, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu, history, preferences, outOfStock, pendingOrder }
     };
   }
 
