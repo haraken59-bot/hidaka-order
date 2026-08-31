@@ -95,6 +95,17 @@
       </form>
       <div class="dialog-content">
         <section class="data-section">
+          <h3>端末データの完全バックアップ</h3>
+          <p>メニュー・初期メニュー・注文履歴・設定・当日の品切れ・未記録注文を、1つのJSONファイルに保存します。</p>
+          <div class="backup-actions">
+            <button type="button" class="secondary-button" id="downloadFullBackup">全データをバックアップ</button>
+            <label class="file-label">全データを復元<input id="restoreFullBackupFile" type="file" accept=".json,application/json" /></label>
+          </div>
+          <p class="field-help">復元時は、内容と件数を確認してから現在の端末データを上書きします。</p>
+          <p class="import-status" id="fullBackupStatus" aria-live="polite"></p>
+        </section>
+
+        <section class="data-section">
           <h3>外部データを取り込む</h3>
           <p>CSV または JSON のメニュー・注文履歴を読み込みます。</p>
           <div class="import-grid">

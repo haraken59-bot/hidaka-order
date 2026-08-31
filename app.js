@@ -2,6 +2,8 @@
   'use strict';
 
   const STORAGE_KEY = 'hidaka-order-v1';
+  const FULL_BACKUP_FORMAT = 'hidaka-order-full-backup';
+  const FULL_BACKUP_SCHEMA_VERSION = 1;
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-06-v1';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
   const CATEGORY_LABEL = { drink: 'お酒', small: '小皿・つまみ', skewer: '串', main: '一品', finish: '締め', dessert: 'デザート', fee: '割代' };
@@ -173,6 +175,8 @@
     $('#cancelMenuEdit').addEventListener('click', () => $('#menuItemDialog').close());
     $('#addToOrderForm').addEventListener('submit', addItemToCurrentOrder);
     $('#cancelOrderAddition').addEventListener('click', () => $('#addToOrderDialog').close());
+    $('#downloadFullBackup').addEventListener('click', downloadFullBackup);
+    $('#restoreFullBackupFile').addEventListener('change', restoreFullBackup);
     $('#importFile').addEventListener('change', importFile);
     $('#downloadCurrentMenu').addEventListener('click', downloadCurrentMenuBackup);
     $('#downloadMenuTemplate').addEventListener('click', downloadDefaultMenu);
@@ -745,9 +749,90 @@
     const parts = []; if (target === 'menu' || target === 'bundle') parts.push(`メニュー ${importedMenu}件`); if (target === 'history' || target === 'bundle') parts.push(`履歴 ${importedHistory}件`); return parts.join('、');
   }
 
-  function download(filename, content) {
+  function createFullBackupPayload() {
+    return {
+      format: FULL_BACKUP_FORMAT,
+      schemaVersion: FULL_BACKUP_SCHEMA_VERSION,
+      exportedAt: new Date().toISOString(),
+      source: { app: '日高オーダー', storageKey: STORAGE_KEY },
+      data: JSON.parse(JSON.stringify(state))
+    };
+  }
+
+  function normalizeFullBackup(raw) {
+    if (!raw || raw.format !== FULL_BACKUP_FORMAT) throw new Error('日高オーダーの完全バックアップではありません');
+    if (Number(raw.schemaVersion) !== FULL_BACKUP_SCHEMA_VERSION) throw new Error(`未対応のバックアップ形式です（バージョン ${raw.schemaVersion ?? '不明'}）`);
+    const saved = raw.data;
+    if (!saved || !Array.isArray(saved.menu) || !Array.isArray(saved.initialMenu) || !Array.isArray(saved.history)) throw new Error('バックアップに必要なデータが不足しています');
+    const base = defaultState();
+    const menu = saved.menu.map(normalizeMenuItem).filter(Boolean);
+    const initialMenu = saved.initialMenu.map(normalizeMenuItem).filter(Boolean);
+    const history = saved.history.map(normalizeHistoryItem).filter(Boolean);
+    if (menu.length !== saved.menu.length || initialMenu.length !== saved.initialMenu.length || history.length !== saved.history.length) throw new Error('壊れているメニューまたは注文履歴が含まれています');
+    const preferences = { ...base.preferences, ...(saved.preferences || {}), budget: ORDER_BUDGET, avoidRecent: true };
+    preferences.moods = Array.isArray(preferences.moods) ? preferences.moods.map(String) : [];
+    preferences.skewerCount = Math.max(0, Math.min(10, Math.round(Number(preferences.skewerCount) || 0)));
+    const outOfStock = saved.outOfStock && typeof saved.outOfStock.date === 'string' && Array.isArray(saved.outOfStock.ids)
+      ? { date: saved.outOfStock.date, ids: saved.outOfStock.ids.map(String) }
+      : base.outOfStock;
+    const pendingOrder = normalizePendingOrder(saved.pendingOrder);
+    if (saved.pendingOrder && !pendingOrder) throw new Error('未記録注文のデータが壊れています');
+    const exportedAt = String(raw.exportedAt || '');
+    return {
+      exportedAt: Number.isFinite(new Date(exportedAt).getTime()) ? exportedAt : '',
+      state: { ...base, defaultMenuVersion: activeDefaultMenuVersion, menu, initialMenu, history, preferences, outOfStock, pendingOrder }
+    };
+  }
+
+  function downloadFullBackup() {
+    const payload = createFullBackupPayload();
+    download(`日高オーダー_全データ_${todayKey()}.json`, `${JSON.stringify(payload, null, 2)}\n`, 'application/json;charset=utf-8', false);
+    $('#fullBackupStatus').textContent = `メニュー ${state.menu.length}品・履歴 ${state.history.length}件を保存しました。`;
+  }
+
+  async function restoreFullBackup(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const status = $('#fullBackupStatus');
+    try {
+      const restored = normalizeFullBackup(JSON.parse(await file.text()));
+      const backupState = restored.state;
+      const exportedAt = restored.exportedAt ? new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(restored.exportedAt)) : '日時不明';
+      const message = [
+        `バックアップ日時: ${exportedAt}`,
+        `現在: メニュー ${state.menu.length}品・履歴 ${state.history.length}件`,
+        `復元後: メニュー ${backupState.menu.length}品・履歴 ${backupState.history.length}件`,
+        `未記録注文: ${backupState.pendingOrder ? 'あり' : 'なし'}`,
+        '',
+        '現在の端末データを上書きして復元しますか？'
+      ].join('\n');
+      if (!confirm(message)) { status.textContent = '復元をキャンセルしました。'; return; }
+      clearPendingReminderTimer();
+      state = backupState;
+      currentOrder = state.pendingOrder?.order || null;
+      getTodayOutOfStockIds();
+      saveState();
+      renderMoodChoices();
+      applyPreferences();
+      renderMenuEditor();
+      renderHistorySummary();
+      if (currentOrder) {
+        renderOrder(currentOrder, false);
+        schedulePendingReminder();
+      } else {
+        $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>空腹度・気分から、バランスよく選びます。</p></div>';
+      }
+      status.textContent = `メニュー ${state.menu.length}品・履歴 ${state.history.length}件を復元しました。`;
+    } catch (error) {
+      status.textContent = `復元できませんでした: ${error.message}`;
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  function download(filename, content, mimeType = 'text/csv;charset=utf-8', includeBom = true) {
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8' }));
+    link.href = URL.createObjectURL(new Blob([includeBom ? `\uFEFF${content}` : content], { type: mimeType }));
     link.download = filename; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
   function csvCell(value) {

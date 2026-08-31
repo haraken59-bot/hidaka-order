@@ -6,7 +6,7 @@ const appPath = new URL('../app.js', import.meta.url);
 const source = readFileSync(appPath, 'utf8');
 const instrumented = source.replace(
   /\n\s*boot\(\);\s*\n\}\)\(\);\s*$/,
-  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, regenerateOrderKeepingManualItems, normalizePendingOrder, setState: value => { state = value; } };\n})();\n'
+  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, regenerateOrderKeepingManualItems, normalizePendingOrder, createFullBackupPayload, normalizeFullBackup, setState: value => { state = value; } };\n})();\n'
 );
 assert.notEqual(instrumented, source, 'app.js のテスト準備に失敗しました。');
 
@@ -109,4 +109,24 @@ assert.equal(normalizedPending.order.items[0].manuallyAdded, true);
 assert.equal(normalizedPending.order.items[0].recommendationReason, 'メニューから手動で追加');
 assert.equal(test.normalizePendingOrder({ order: { items: [] } }), null);
 
-console.log('品切れ置換、注文条件、未記録注文の復元データを確認しました。');
+test.setState({
+  defaultMenuVersion: 'test-version',
+  menu: [drink, small, manuallyAdded],
+  initialMenu: [drink, small],
+  history: [{ id: 'history-1', date: '2026-08-20', items: [{ name: small.name, price: small.price }] }],
+  preferences,
+  outOfStock: { date: '2026-08-20', ids: ['sold-out'] },
+  pendingOrder: normalizedPending
+});
+const fullBackup = test.createFullBackupPayload();
+assert.equal(fullBackup.format, 'hidaka-order-full-backup');
+assert.equal(fullBackup.schemaVersion, 1);
+assert.equal(fullBackup.data.menu.length, 3);
+const restoredBackup = test.normalizeFullBackup(fullBackup);
+assert.equal(restoredBackup.state.menu.length, 3);
+assert.equal(restoredBackup.state.initialMenu.length, 2);
+assert.equal(restoredBackup.state.history[0].items[0].price, small.price);
+assert.equal(restoredBackup.state.pendingOrder.order.items[0].manuallyAdded, true);
+assert.throws(() => test.normalizeFullBackup({ format: 'unknown', schemaVersion: 1, data: {} }), /完全バックアップではありません/);
+
+console.log('品切れ置換、注文条件、未記録注文、完全バックアップの復元データを確認しました。');
