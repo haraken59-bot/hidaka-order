@@ -3,19 +3,29 @@
 
   const STORAGE_KEY = 'hidaka-order-v1';
   const FULL_BACKUP_FORMAT = 'hidaka-order-full-backup';
-  const FULL_BACKUP_SCHEMA_VERSION = 3;
+  const FULL_BACKUP_SCHEMA_VERSION = 4;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
-  const DATA_SCHEMA_VERSION = 3;
-  const APP_VERSION = '1.5.0';
+  const DATA_SCHEMA_VERSION = 4;
+  const APP_VERSION = '1.6.0';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-31-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-01';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
   const DEFAULT_STORE_ID = 'hidaka-001';
   const FALLBACK_STORE = { id: DEFAULT_STORE_ID, name: 'やきとり日高', area: '', memo: '' };
   const CATEGORY_LABEL = { drink: 'お酒', small: '小皿・つまみ', skewer: '串', main: '一品', finish: '締め', dessert: 'デザート', fee: '割代' };
+  const OFFERING_TYPE_LABEL = { regular: '通常', seasonal: '季節', limited: '期間限定' };
+  const SEASON_LABEL = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' };
+  const SEASON_CANONICAL = { spring: 'spring', '春': 'spring', summer: 'summer', '夏': 'summer', autumn: 'autumn', fall: 'autumn', '秋': 'autumn', winter: 'winter', '冬': 'winter' };
   const MOOD_LABEL = { pork: '豚', chicken: '鶏', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの' };
   const TAG_LABEL = { pork: '豚', chicken: '鶏', beef: '牛', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの', light: '軽め', drink: '飲み物', finish: '締め', rice: 'ご飯', noodle: '麺', soup: '汁物', dessert: 'デザート', sweet: '甘いもの', alcohol: 'アルコール', nonalcohol: 'ノンアルコール', shishito: 'ししとう' };
   const TAG_CANONICAL = { pork: 'pork', '豚': 'pork', chicken: 'chicken', '鶏': 'chicken', beef: 'beef', '牛': 'beef', seafood: 'seafood', '魚介': 'seafood', vegetable: 'vegetable', '野菜': 'vegetable', spicy: 'spicy', '辛いもの': 'spicy', light: 'light', '軽め': 'light', drink: 'drink', '飲み物': 'drink', finish: 'finish', '締め': 'finish', rice: 'rice', 'ご飯': 'rice', noodle: 'noodle', '麺': 'noodle', soup: 'soup', '汁物': 'soup', dessert: 'dessert', 'デザート': 'dessert', sweet: 'sweet', '甘いもの': 'sweet', alcohol: 'alcohol', 'アルコール': 'alcohol', nonalcohol: 'nonalcohol', 'ノンアルコール': 'nonalcohol', shishito: 'shishito', 'ししとう': 'shishito' };
+  const MENU_CATEGORY_OPTIONS = ['drink', 'small', 'skewer', 'main', 'finish', 'dessert'];
+  const MENU_TAG_GROUPS = [
+    { label: '食材', tags: ['pork', 'chicken', 'beef', 'seafood', 'vegetable'] },
+    { label: '内容・用途', tags: ['drink', 'finish', 'rice', 'noodle', 'soup', 'dessert'] },
+    { label: '特徴', tags: ['spicy', 'light', 'sweet', 'alcohol', 'nonalcohol', 'shishito'] }
+  ];
+  const MENU_TAG_SORT_ORDER = MENU_TAG_GROUPS.flatMap(group => group.tags);
   const FOOD_MOOD_TAGS = new Set(['pork', 'chicken', 'beef', 'seafood', 'vegetable', 'spicy']);
   const KEEP_SHOCHU_FEE = { id: 'keep-shochu-fee', storeId: DEFAULT_STORE_ID, name: '割代（焼酎キープ）', price: 220, category: 'fee', tags: [], actual: true };
   const ORDER_BUDGET = 3000;
@@ -59,7 +69,7 @@
     const stores = cloneStores(defaultStores);
     const activeStoreId = stores.some(store => store.id === DEFAULT_STORE_ID) ? DEFAULT_STORE_ID : stores[0].id;
     const menu = defaultMenu.map(item => ({ ...item, storeId: item.storeId || activeStoreId, tags: item.tags.map(localizeTag) }));
-    return { dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', skewerCount: 3, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, outOfStock: { date: todayKey(), ids: [] }, pendingOrder: null };
+    return { dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', skewerCount: 3, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, menuSortMode: 'tag', outOfStock: { date: todayKey(), ids: [] }, pendingOrder: null };
   }
   let state;
   let currentOrder = null;
@@ -83,7 +93,8 @@
       const shouldInstallNewBaseMenu = saved.defaultMenuVersion !== activeDefaultMenuVersion;
       const menu = shouldInstallNewBaseMenu ? cloneMenu(base.menu) : saved.menu.map(normalizeMenuItem).filter(Boolean);
       const initialMenu = shouldInstallNewBaseMenu ? cloneMenu(base.initialMenu) : (Array.isArray(saved.initialMenu) ? saved.initialMenu.map(normalizeMenuItem).filter(Boolean) : cloneMenu(menu));
-      return { ...base, ...saved, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, preferences: { ...base.preferences, ...(saved.preferences || {}), avoidRecent: true }, outOfStock, menu, initialMenu, history: saved.history.map(entry => normalizeHistoryItem(entry, menu)).filter(Boolean), pendingOrder: normalizePendingOrder(saved.pendingOrder) };
+      const menuSortMode = ['tag', 'category'].includes(saved.menuSortMode) ? saved.menuSortMode : base.menuSortMode;
+      return { ...base, ...saved, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, preferences: { ...base.preferences, ...(saved.preferences || {}), avoidRecent: true }, menuSortMode, outOfStock, menu, initialMenu, history: saved.history.map(entry => normalizeHistoryItem(entry, menu)).filter(Boolean), pendingOrder: normalizePendingOrder(saved.pendingOrder) };
     } catch { return defaultState(); }
   }
 
@@ -150,8 +161,15 @@
   function canonicalTag(tag) { return TAG_CANONICAL[String(tag || '').trim().toLowerCase()] || String(tag || '').trim().toLowerCase(); }
   function localizeTag(tag) { const original = String(tag || '').trim(); return TAG_LABEL[canonicalTag(original)] || original; }
   function hasTag(item, target) { return item.tags.some(tag => canonicalTag(tag) === canonicalTag(target)); }
-  function isMenuAvailable(item) { return item?.available !== false; }
+  function isMenuManuallyAvailable(item) { return item?.available !== false; }
+  function isMenuWithinOfferingPeriod(item, date = todayKey()) {
+    if (item?.availableFrom && date < item.availableFrom) return false;
+    if (item?.availableUntil && date > item.availableUntil) return false;
+    return true;
+  }
+  function isMenuAvailable(item) { return isMenuManuallyAvailable(item) && isMenuWithinOfferingPeriod(item); }
   function hasAvailabilityField(raw) { return raw && ['available', '提供中', '提供状態'].some(key => Object.prototype.hasOwnProperty.call(raw, key)); }
+  function hasOfferingFields(raw) { return raw && ['offeringType', '提供区分', 'seasons', '季節', 'availableFrom', '提供開始日', 'availableUntil', '提供終了日', 'memo', 'メモ', 'updatedAt', '最終更新日'].some(key => Object.prototype.hasOwnProperty.call(raw, key)); }
   function normalizeAvailability(raw) {
     const value = raw.available ?? raw['提供中'] ?? raw['提供状態'];
     if (value === undefined || value === null || value === '') return true;
@@ -162,6 +180,19 @@
     const rawTags = Array.isArray(tags) ? tags : String(tags || '').split(/[|,、]/);
     return rawTags.map(localizeTag).filter(Boolean);
   }
+  function normalizeOfferingType(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    const aliases = { '通常': 'regular', '通常メニュー': 'regular', '季節': 'seasonal', '季節メニュー': 'seasonal', '期間限定': 'limited', '期間限定メニュー': 'limited' };
+    return OFFERING_TYPE_LABEL[normalized] ? normalized : (aliases[normalized] || 'regular');
+  }
+  function normalizeSeasons(value) {
+    const values = Array.isArray(value) ? value : String(value || '').split(/[|,、]/);
+    return [...new Set(values.map(season => SEASON_CANONICAL[String(season).trim().toLowerCase()]).filter(Boolean))];
+  }
+  function normalizeOptionalDate(value) {
+    const normalized = String(value || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
+  }
   function normalizeMenuItem(raw) {
     const name = String(raw.name ?? raw['料理名'] ?? raw['メニュー名'] ?? '').trim();
     const price = Number(raw.price ?? raw['価格'] ?? raw['値段']);
@@ -171,7 +202,13 @@
     const category = CATEGORY_LABEL[categoryValue] ? categoryValue : (categoryMap[categoryValue] || 'small');
     const actualValue = raw.actual ?? raw['実額'] ?? raw['実売価格'];
     const storeId = String(raw.storeId ?? raw['店舗ID'] ?? DEFAULT_STORE_ID).trim() || DEFAULT_STORE_ID;
-    return { id: String(raw.id || raw['ID'] || raw['メニューID'] || uid()), storeId, name, price: Math.round(price), category, tags: normalizeTags(raw.tags ?? raw['タグ']), actual: actualValue === true || String(actualValue).toLowerCase() === 'true' || String(actualValue) === '1', available: normalizeAvailability(raw) };
+    const offeringType = normalizeOfferingType(raw.offeringType ?? raw['提供区分']);
+    const seasons = offeringType === 'seasonal' ? normalizeSeasons(raw.seasons ?? raw['季節']) : [];
+    const availableFrom = offeringType === 'regular' ? '' : normalizeOptionalDate(raw.availableFrom ?? raw['提供開始日']);
+    const availableUntil = offeringType === 'regular' ? '' : normalizeOptionalDate(raw.availableUntil ?? raw['提供終了日']);
+    const memo = String(raw.memo ?? raw['メモ'] ?? '').trim();
+    const updatedAt = String(raw.updatedAt ?? raw['最終更新日'] ?? '').trim();
+    return { id: String(raw.id || raw['ID'] || raw['メニューID'] || uid()), storeId, name, price: Math.round(price), category, tags: normalizeTags(raw.tags ?? raw['タグ']), actual: actualValue === true || String(actualValue).toLowerCase() === 'true' || String(actualValue) === '1', available: normalizeAvailability(raw), offeringType, seasons, availableFrom, availableUntil, memo, updatedAt };
   }
   function historyUnitPrice(item) {
     const value = item?.unitPrice ?? item?.price;
@@ -352,6 +389,12 @@
       syncSkewerCount();
     });
     $('#dataButton').addEventListener('click', openDataDialog);
+    $$('input[name="menuSortMode"]').forEach(input => input.addEventListener('change', () => {
+      if (!input.checked) return;
+      state.menuSortMode = input.value;
+      saveState();
+      renderMenuEditor();
+    }));
     $('#addMenuItem').addEventListener('click', () => openMenuForm());
     $('#menuItemForm').addEventListener('submit', saveMenuItem);
     $('#cancelMenuEdit').addEventListener('click', () => $('#menuItemDialog').close());
@@ -496,11 +539,21 @@
     return `目安予算 ${yen(budget)} を ${yen(recommendedTotal - budget)} 超えています。指定した条件と各商品の選定理由を優先しました。${details}`;
   }
 
+  function offeringReason(item) {
+    if (item?.offeringType === 'seasonal') return '現在提供中の季節メニュー';
+    if (item?.offeringType === 'limited') return '現在提供中の期間限定メニュー';
+    return '';
+  }
+  function appendOfferingReason(reason, item) {
+    const offering = offeringReason(item);
+    return offering ? `${reason ? `${reason}／` : ''}${offering}` : reason;
+  }
+
   function createOrder(p, excludedIds = getTodayOutOfStockIds()) {
     const excluded = new Set(excludedIds);
     const selected = [];
     const add = (item, recommendationReason = '') => {
-      if (item && isMenuAvailable(item) && !excluded.has(item.id) && !selected.some(choice => choice.name === item.name)) selected.push({ ...item, recommendationReason });
+      if (item && isMenuAvailable(item) && !excluded.has(item.id) && !selected.some(choice => choice.name === item.name)) selected.push({ ...item, recommendationReason: appendOfferingReason(recommendationReason, item) });
       return item;
     };
     const recent = recentOrderStats();
@@ -535,14 +588,14 @@
     if (p.drink !== 'none') {
       const selectedDrink = state.menu.find(item => item.id === p.drink && item.category === 'drink');
       if (!selectedDrink) unavailable.push('選択した飲み物がメニューに登録されていないため、入れられませんでした。');
-      else if (!isMenuAvailable(selectedDrink)) unavailable.push(`選択した飲み物「${selectedDrink.name}」は提供休止中のため、入れられませんでした。`);
+      else if (!isMenuAvailable(selectedDrink)) unavailable.push(`選択した飲み物「${selectedDrink.name}」は休止中または提供期間外のため、入れられませんでした。`);
       else if (excluded.has(selectedDrink.id)) unavailable.push(`選択した飲み物「${selectedDrink.name}」は品切れとして除外しました。`);
       else add(selectedDrink, '最初の飲み物として指定');
     }
     if (p.mustShishito) {
       const registeredShishito = state.menu.find(item => item.name === 'ししとう串') || state.menu.find(item => /ししとう/.test(item.name) || hasTag(item, 'shishito'));
       if (!registeredShishito) unavailable.push('ししとうがメニューに登録されていないため、入れられませんでした。');
-      else if (!isMenuAvailable(registeredShishito)) unavailable.push('ししとうは提供休止中のため、入れられませんでした。');
+      else if (!isMenuAvailable(registeredShishito)) unavailable.push('ししとうは休止中または提供期間外のため、入れられませんでした。');
       else if (excluded.has(registeredShishito.id)) unavailable.push('ししとうは品切れとして除外しました。');
       else add(registeredShishito, '必須指定された串');
     }
@@ -637,7 +690,7 @@
         return;
       }
 
-      items.push({ ...replacement, recommendationReason: `品切れの「${item.name}」と同じ分類から代替` });
+      items.push({ ...replacement, recommendationReason: appendOfferingReason(`品切れの「${item.name}」と同じ分類から代替`, replacement) });
       usedIds.add(String(replacement.id));
       usedNames.add(replacement.name);
       runningTotal += replacement.price;
@@ -820,7 +873,7 @@
     event.preventDefault();
     if (!currentOrder) return;
     const item = state.menu.find(menuItem => menuItem.id === $('#additionalItem').value);
-    if (!item || !isMenuAvailable(item) || getTodayOutOfStockIds().includes(item.id)) { $('#addOrderStatus').textContent = 'この商品は休止中または品切れのため追加できません。'; return; }
+    if (!item || !isMenuAvailable(item) || getTodayOutOfStockIds().includes(item.id)) { $('#addOrderStatus').textContent = 'この商品は休止中・提供期間外または品切れのため追加できません。'; return; }
     const priority = { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 };
     const manuallyAddedItem = { ...item, manuallyAdded: true, recommendationReason: 'メニューから手動で追加' };
     const items = [...currentOrder.items, manuallyAddedItem].sort((a, b) => priority[a.category] - priority[b.category]);
@@ -861,24 +914,60 @@
     $('#historyDialog').showModal();
   }
 
-  function openDataDialog() { renderMenuEditor(); $('#dataDialog').showModal(); }
+  function openDataDialog() {
+    const sortInput = $(`input[name="menuSortMode"][value="${state.menuSortMode || 'tag'}"]`);
+    if (sortInput) sortInput.checked = true;
+    renderMenuEditor();
+    $('#dataDialog').showModal();
+  }
+  function menuTagSortKey(item) {
+    const tags = (item.tags || []).map(canonicalTag).filter(Boolean);
+    const standardTags = tags.map(tag => ({ tag, index: MENU_TAG_SORT_ORDER.indexOf(tag) })).filter(entry => entry.index >= 0).sort((a, b) => a.index - b.index);
+    if (standardTags.length) return { index: standardTags[0].index, label: localizeTag(standardTags[0].tag) };
+    const customTags = tags.map(localizeTag).sort((a, b) => a.localeCompare(b, 'ja'));
+    return customTags.length ? { index: MENU_TAG_SORT_ORDER.length, label: customTags[0] } : { index: MENU_TAG_SORT_ORDER.length + 1, label: '' };
+  }
+  function compareMenuEditorItems(a, b) {
+    const aTag = menuTagSortKey(a);
+    const bTag = menuTagSortKey(b);
+    return aTag.index - bTag.index
+      || aTag.label.localeCompare(bTag.label, 'ja')
+      || Number(isMenuAvailable(b)) - Number(isMenuAvailable(a))
+      || a.name.localeCompare(b.name, 'ja');
+  }
+  function compareMenuEditorItemsByCategory(a, b) {
+    const aIndex = MENU_CATEGORY_OPTIONS.indexOf(a.category);
+    const bIndex = MENU_CATEGORY_OPTIONS.indexOf(b.category);
+    return (aIndex < 0 ? MENU_CATEGORY_OPTIONS.length : aIndex) - (bIndex < 0 ? MENU_CATEGORY_OPTIONS.length : bIndex)
+      || Number(isMenuAvailable(b)) - Number(isMenuAvailable(a))
+      || a.name.localeCompare(b.name, 'ja');
+  }
   function renderMenuEditor() {
     const availableCount = state.menu.filter(isMenuAvailable).length;
-    $('#menuCount').textContent = `提供中 ${availableCount}品・休止 ${state.menu.length - availableCount}品`;
+    const pausedCount = state.menu.filter(item => !isMenuManuallyAvailable(item)).length;
+    const outOfPeriodCount = state.menu.length - availableCount - pausedCount;
+    $('#menuCount').textContent = `提供中 ${availableCount}品・期間外 ${outOfPeriodCount}品・休止 ${pausedCount}品`;
     const editor = $('#menuEditor');
     editor.innerHTML = '';
     const template = $('#menuRowTemplate');
-    state.menu.slice().sort((a, b) => Number(isMenuAvailable(b)) - Number(isMenuAvailable(a)) || a.category.localeCompare(b.category) || a.name.localeCompare(b.name, 'ja')).forEach(item => {
+    const comparator = state.menuSortMode === 'category' ? compareMenuEditorItemsByCategory : compareMenuEditorItems;
+    state.menu.slice().sort(comparator).forEach(item => {
       const row = template.content.cloneNode(true);
       const available = isMenuAvailable(item);
+      const manuallyAvailable = isMenuManuallyAvailable(item);
+      const offeringLabel = item.offeringType && item.offeringType !== 'regular' ? ` ・ ${OFFERING_TYPE_LABEL[item.offeringType]}` : '';
+      const seasonLabel = item.seasons?.length ? `（${item.seasons.map(season => SEASON_LABEL[season]).join('・')}）` : '';
+      const periodLabel = item.availableFrom || item.availableUntil ? ` ・ ${item.availableFrom || '開始未定'}〜${item.availableUntil || '終了未定'}` : '';
+      const availabilityLabel = manuallyAvailable ? (available ? '' : ' ・ 期間外') : ' ・ 休止中';
+      const tagLabel = item.tags?.length ? ` ・ タグ: ${item.tags.map(localizeTag).join('・')}` : ' ・ タグなし';
       const rowElement = $('.menu-row', row);
       rowElement.classList.toggle('is-inactive', !available);
       $('.menu-name', row).textContent = item.name;
-      $('.menu-meta', row).textContent = `${yen(item.price)} ・ ${CATEGORY_LABEL[item.category]}${item.actual ? '' : ' ・ 目安'}${available ? '' : ' ・ 休止中'}`;
+      $('.menu-meta', row).textContent = `${yen(item.price)} ・ ${CATEGORY_LABEL[item.category]}${tagLabel}${offeringLabel}${seasonLabel}${periodLabel}${item.actual ? '' : ' ・ 目安'}${availabilityLabel}`;
       $('.edit-menu-item', row).addEventListener('click', () => openMenuForm(item));
       const availabilityButton = $('.availability-menu-item', row);
-      availabilityButton.textContent = available ? '休止' : '再開';
-      availabilityButton.setAttribute('aria-label', `${item.name}を${available ? '提供休止' : '提供再開'}`);
+      availabilityButton.textContent = manuallyAvailable ? '休止' : '再開';
+      availabilityButton.setAttribute('aria-label', `${item.name}を${manuallyAvailable ? '提供休止' : '提供再開'}`);
       availabilityButton.addEventListener('click', () => toggleMenuAvailability(item));
       editor.append(row);
     });
@@ -889,18 +978,87 @@
     $('#itemId').value = item?.id || '';
     $('#itemName').value = item?.name || '';
     $('#itemPrice').value = item?.price ?? '';
-    $('#itemCategory').value = item?.category || 'small';
-    $('#itemTags').value = item?.tags.join('|') || '';
+    renderMenuCategoryChoices(item?.category || 'small');
+    renderMenuTagChoices(item?.tags || []);
+    renderOfferingTypeChoices(item?.offeringType || 'regular');
+    renderSeasonChoices(item?.seasons || []);
+    $('#itemAvailableFrom').value = item?.availableFrom || '';
+    $('#itemAvailableUntil').value = item?.availableUntil || '';
+    $('#itemMemo').value = item?.memo || '';
     $('#itemActual').checked = item?.actual || false;
-    $('#itemAvailable').checked = isMenuAvailable(item);
+    $('#itemAvailable').checked = isMenuManuallyAvailable(item);
+    syncOfferingFields();
     $('#menuItemDialog').showModal();
     $('#itemName').focus();
+  }
+  function createMenuSwitch(name, value, labelText, checked, type) {
+    const label = document.createElement('label');
+    label.className = 'menu-switch-choice';
+    const input = document.createElement('input');
+    input.type = type;
+    input.name = name;
+    input.value = value;
+    input.checked = checked;
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = labelText;
+    label.append(input, labelSpan);
+    return label;
+  }
+  function renderMenuCategoryChoices(selectedCategory) {
+    const selected = MENU_CATEGORY_OPTIONS.includes(selectedCategory) ? selectedCategory : 'small';
+    $('#itemCategoryChoices').replaceChildren(...MENU_CATEGORY_OPTIONS.map(category => createMenuSwitch('itemCategory', category, CATEGORY_LABEL[category], category === selected, 'radio')));
+  }
+  function renderOfferingTypeChoices(selectedType) {
+    const selected = OFFERING_TYPE_LABEL[selectedType] ? selectedType : 'regular';
+    const choices = Object.keys(OFFERING_TYPE_LABEL).map(type => createMenuSwitch('itemOfferingType', type, `${OFFERING_TYPE_LABEL[type]}メニュー`, type === selected, 'radio'));
+    choices.forEach(choice => $('input', choice).addEventListener('change', syncOfferingFields));
+    $('#itemOfferingTypeChoices').replaceChildren(...choices);
+  }
+  function renderSeasonChoices(selectedSeasons) {
+    const selected = new Set(normalizeSeasons(selectedSeasons));
+    $('#itemSeasonChoices').replaceChildren(...Object.keys(SEASON_LABEL).map(season => createMenuSwitch('itemSeason', season, SEASON_LABEL[season], selected.has(season), 'checkbox')));
+  }
+  function syncOfferingFields() {
+    const type = $('input[name="itemOfferingType"]:checked', $('#menuItemForm'))?.value || 'regular';
+    $('#seasonSettings').hidden = type !== 'seasonal';
+    $('#periodSettings').hidden = type === 'regular';
+  }
+  function renderMenuTagChoices(selectedTags) {
+    const selected = new Set((selectedTags || []).map(canonicalTag));
+    const standardTags = new Set(MENU_TAG_GROUPS.flatMap(group => group.tags));
+    const registeredTags = state.menu.flatMap(item => item.tags.map(canonicalTag));
+    const customTags = [...new Set([...registeredTags, ...selected])].filter(tag => tag && !standardTags.has(tag)).sort((a, b) => localizeTag(a).localeCompare(localizeTag(b), 'ja'));
+    const groups = customTags.length ? [...MENU_TAG_GROUPS, { label: 'その他の登録済みタグ', tags: customTags }] : MENU_TAG_GROUPS;
+    const fragments = groups.map(group => {
+      const section = document.createElement('section');
+      section.className = 'menu-tag-group';
+      const heading = document.createElement('h3');
+      heading.textContent = group.label;
+      const choices = document.createElement('div');
+      choices.className = 'menu-switch-grid';
+      choices.append(...group.tags.map(tag => createMenuSwitch('itemTag', tag, localizeTag(tag), selected.has(tag), 'checkbox')));
+      section.append(heading, choices);
+      return section;
+    });
+    $('#itemTagChoices').replaceChildren(...fragments);
   }
   function saveMenuItem(event) {
     event.preventDefault();
     const itemId = $('#itemId').value || uid();
     const existingItem = state.menu.find(menuItem => menuItem.id === itemId);
-    const item = normalizeMenuItem({ id: itemId, storeId: existingItem?.storeId || getActiveStoreId(), name: $('#itemName').value, price: $('#itemPrice').value, category: $('#itemCategory').value, tags: $('#itemTags').value, actual: $('#itemActual').checked, available: $('#itemAvailable').checked });
+    const category = $('input[name="itemCategory"]:checked', $('#menuItemForm'))?.value || 'small';
+    const tags = $$('input[name="itemTag"]:checked', $('#menuItemForm')).map(input => input.value);
+    const offeringType = $('input[name="itemOfferingType"]:checked', $('#menuItemForm'))?.value || 'regular';
+    const seasons = $$('input[name="itemSeason"]:checked', $('#menuItemForm')).map(input => input.value);
+    const availableFrom = offeringType === 'regular' ? '' : $('#itemAvailableFrom').value;
+    const availableUntil = offeringType === 'regular' ? '' : $('#itemAvailableUntil').value;
+    if (availableFrom && availableUntil && availableFrom > availableUntil) {
+      $('#itemAvailableUntil').setCustomValidity('終了日は開始日以降にしてください。');
+      $('#itemAvailableUntil').reportValidity();
+      return;
+    }
+    $('#itemAvailableUntil').setCustomValidity('');
+    const item = normalizeMenuItem({ id: itemId, storeId: existingItem?.storeId || getActiveStoreId(), name: $('#itemName').value, price: $('#itemPrice').value, category, tags, actual: $('#itemActual').checked, available: $('#itemAvailable').checked, offeringType, seasons, availableFrom, availableUntil, memo: $('#itemMemo').value, updatedAt: new Date().toISOString() });
     if (!item) return;
     const index = state.menu.findIndex(menuItem => menuItem.id === item.id);
     if (index >= 0) state.menu[index] = item; else state.menu.push(item);
@@ -908,7 +1066,7 @@
     saveState(); renderMenuEditor(); renderMoodChoices(); $('#menuItemDialog').close();
   }
   function toggleMenuAvailability(item) {
-    const nextAvailable = !isMenuAvailable(item);
+    const nextAvailable = !isMenuManuallyAvailable(item);
     const action = nextAvailable ? '提供を再開' : '提供休止に変更';
     if (!confirm(`「${item.name}」を${action}しますか？${nextAvailable ? '' : '\n休止中は注文候補に表示されません。'}`)) return;
     item.available = nextAvailable;
@@ -955,12 +1113,18 @@
     const target = requestedTarget === 'auto' ? (isBundle ? 'bundle' : hasMenuFields ? 'menu' : 'history') : requestedTarget;
     let importedMenu = 0; let importedHistory = 0;
     const putMenu = entries => {
-      const normalizedEntries = entries.map(raw => ({ item: normalizeMenuItem(raw), hasAvailability: hasAvailabilityField(raw) })).filter(entry => entry.item);
+      const normalizedEntries = entries.map(raw => ({ item: normalizeMenuItem(raw), hasAvailability: hasAvailabilityField(raw), hasOffering: hasOfferingFields(raw) })).filter(entry => entry.item);
       const valid = normalizedEntries.map(entry => entry.item);
       importedMenu += valid.length;
       if (!valid.length) throw new Error('メニューとして使える「料理名」と「価格」が見つかりません');
       if (mode === 'replace') state.menu = [];
-      normalizedEntries.forEach(({ item, hasAvailability }) => { const index = state.menu.findIndex(existing => existing.storeId === item.storeId && existing.name === item.name); if (index >= 0) state.menu[index] = { ...state.menu[index], ...item, id: state.menu[index].id, available: hasAvailability ? item.available : isMenuAvailable(state.menu[index]) }; else state.menu.push(item); });
+      normalizedEntries.forEach(({ item, hasAvailability, hasOffering }) => {
+        const index = state.menu.findIndex(existing => existing.storeId === item.storeId && existing.name === item.name);
+        if (index < 0) { state.menu.push(item); return; }
+        const existing = state.menu[index];
+        const existingOffering = { offeringType: existing.offeringType, seasons: existing.seasons, availableFrom: existing.availableFrom, availableUntil: existing.availableUntil, memo: existing.memo, updatedAt: existing.updatedAt };
+        state.menu[index] = { ...existing, ...item, ...(hasOffering ? {} : existingOffering), id: existing.id, available: hasAvailability ? item.available : isMenuManuallyAvailable(existing) };
+      });
     };
     const putHistory = entries => {
       const valid = entries.map(entry => normalizeHistoryItem(entry, state.menu)).filter(Boolean);
@@ -1011,7 +1175,7 @@
     const exportedAt = String(raw.exportedAt || '');
     return {
       exportedAt: Number.isFinite(new Date(exportedAt).getTime()) ? exportedAt : '',
-      state: { ...base, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu, history, preferences, outOfStock, pendingOrder }
+      state: { ...base, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu, history, preferences, menuSortMode: ['tag', 'category'].includes(saved.menuSortMode) ? saved.menuSortMode : base.menuSortMode, outOfStock, pendingOrder }
     };
   }
 
@@ -1072,8 +1236,8 @@
   }
   function buildMenuCsv(menu) {
     const rows = [
-      ['メニューID', '店舗ID', '料理名', '価格', '分類', 'タグ', '実額', '提供状態'],
-      ...menu.map(item => [item.id, item.storeId || getActiveStoreId(), item.name, item.price, item.category, item.tags.join('|'), item.actual, isMenuAvailable(item) ? '提供中' : '休止中'])
+      ['メニューID', '店舗ID', '料理名', '価格', '分類', 'タグ', '実額', '提供状態', '提供区分', '季節', '提供開始日', '提供終了日', 'メモ', '最終更新日'],
+      ...menu.map(item => [item.id, item.storeId || getActiveStoreId(), item.name, item.price, item.category, item.tags.join('|'), item.actual, isMenuManuallyAvailable(item) ? '提供中' : '休止中', OFFERING_TYPE_LABEL[item.offeringType] || '通常', (item.seasons || []).map(season => SEASON_LABEL[season]).join('|'), item.availableFrom || '', item.availableUntil || '', item.memo || '', item.updatedAt || ''])
     ];
     return `${rows.map(row => row.map(csvCell).join(',')).join('\n')}\n`;
   }

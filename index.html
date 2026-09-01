@@ -130,6 +130,13 @@
 
         <section class="data-section">
           <div class="section-title-row"><h3>メニュー <span id="menuCount"></span></h3><button class="text-button" type="button" id="addMenuItem">＋ 追加</button></div>
+          <div class="menu-sort-control" aria-label="メニューの並び順">
+            <span>並び順</span>
+            <div class="choice-row compact menu-sort-choices">
+              <label><input type="radio" name="menuSortMode" value="tag" /> タグ順</label>
+              <label><input type="radio" name="menuSortMode" value="category" /> 区分順</label>
+            </div>
+          </div>
           <div class="menu-editor" id="menuEditor"></div>
         </section>
 
@@ -162,12 +169,30 @@
         <input id="itemId" type="hidden" />
         <label>料理名<input id="itemName" required maxlength="40" /></label>
         <label>価格（円）<input id="itemPrice" required type="number" min="0" step="1" /></label>
-        <label>分類
-          <select id="itemCategory">
-            <option value="drink">お酒</option><option value="small">小皿・つまみ</option><option value="skewer">串</option><option value="main">一品</option><option value="finish">締め</option><option value="dessert">デザート</option>
-          </select>
-        </label>
-        <label>タグ <small>例: 豚|軽め|辛いもの</small><input id="itemTags" placeholder="豚|軽め" /></label>
+        <fieldset class="menu-switch-field">
+          <legend>区分 <small>1つ選択</small></legend>
+          <div id="itemCategoryChoices" class="menu-switch-grid category-switch-grid"></div>
+        </fieldset>
+        <fieldset class="menu-switch-field">
+          <legend>タグ <small>複数選択可</small></legend>
+          <div id="itemTagChoices" class="menu-tag-groups"></div>
+        </fieldset>
+        <fieldset class="menu-switch-field">
+          <legend>提供区分 <small>1つ選択</small></legend>
+          <div id="itemOfferingTypeChoices" class="menu-switch-grid offering-switch-grid"></div>
+        </fieldset>
+        <fieldset id="seasonSettings" class="menu-switch-field" hidden>
+          <legend>季節 <small>複数選択可・未選択でも保存可</small></legend>
+          <div id="itemSeasonChoices" class="menu-switch-grid season-switch-grid"></div>
+        </fieldset>
+        <div id="periodSettings" class="offering-period-settings" hidden>
+          <p>提供期間 <small>日付未定の場合は空欄で構いません</small></p>
+          <div class="offering-period-grid">
+            <label>開始日<input id="itemAvailableFrom" type="date" /></label>
+            <label>終了日<input id="itemAvailableUntil" type="date" /></label>
+          </div>
+        </div>
+        <label>メモ <small>季節や販売条件など、必要な場合だけ</small><textarea id="itemMemo" maxlength="200" rows="3"></textarea></label>
         <label class="checkbox-line"><input id="itemActual" type="checkbox" /> 価格を実額として扱う</label>
         <label class="checkbox-line"><input id="itemAvailable" type="checkbox" checked /> 提供中として扱う</label>
         <div class="form-actions"><button type="button" class="secondary-button" id="cancelMenuEdit">キャンセル</button><button class="primary-button" type="submit">保存</button></div>

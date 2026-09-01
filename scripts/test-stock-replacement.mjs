@@ -6,7 +6,7 @@ const appPath = new URL('../app.js', import.meta.url);
 const source = readFileSync(appPath, 'utf8');
 const instrumented = source.replace(
   /\n\s*boot\(\);\s*\n\}\)\(\);\s*$/,
-  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, regenerateOrderKeepingManualItems, normalizePendingOrder, normalizeHistoryItem, normalizeVisitContext, createVisitContext, createHistoryRecord, normalizeStore, normalizeStores, normalizeMenuItem, normalizeDefaultMenuRows, buildMenuCsv, createFullBackupPayload, normalizeFullBackup, setState: value => { state = value; } };\n})();\n'
+  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, regenerateOrderKeepingManualItems, normalizePendingOrder, normalizeHistoryItem, normalizeVisitContext, createVisitContext, createHistoryRecord, normalizeStore, normalizeStores, normalizeMenuItem, normalizeDefaultMenuRows, compareMenuEditorItems, compareMenuEditorItemsByCategory, buildMenuCsv, mergeImportedData, createFullBackupPayload, normalizeFullBackup, setState: value => { state = value; }, getState: () => state };\n})();\n'
 );
 assert.notEqual(instrumented, source, 'app.js のテスト準備に失敗しました。');
 
@@ -18,15 +18,44 @@ const stableIdItem = test.normalizeMenuItem({ メニューID: 'base-001', 料理
 assert.equal(stableIdItem.id, 'base-001');
 assert.equal(stableIdItem.storeId, 'hidaka-001');
 assert.equal(stableIdItem.available, true);
+assert.equal(stableIdItem.offeringType, 'regular');
+assert.deepEqual(Array.from(stableIdItem.seasons), []);
+assert.equal(stableIdItem.availableFrom, '');
+assert.equal(stableIdItem.availableUntil, '');
 const pausedCsvItem = test.normalizeMenuItem({ メニューID: 'base-002', 店舗ID: 'hidaka-001', 料理名: '休止確認', 価格: 200, 分類: '小皿', タグ: '', 実額: true, 提供状態: '休止中' });
 assert.equal(pausedCsvItem.available, false);
-assert.match(test.buildMenuCsv([stableIdItem, pausedCsvItem]), /^メニューID,店舗ID,料理名,価格,分類,タグ,実額,提供状態\nbase-001,hidaka-001,[^\n]+,提供中\nbase-002,hidaka-001,[^\n]+,休止中\n$/);
+const seasonalCsvItem = test.normalizeMenuItem({ メニューID: 'base-003', 店舗ID: 'hidaka-001', 料理名: '季節確認', 価格: 300, 分類: '小皿', タグ: '魚介', 実額: true, 提供状態: '提供中', 提供区分: '季節', 季節: '春|夏', 提供開始日: '2026-03-01', 提供終了日: '2026-08-31', メモ: '確認用', 最終更新日: '2026-03-01T10:00:00.000Z' });
+assert.equal(seasonalCsvItem.offeringType, 'seasonal');
+assert.deepEqual(Array.from(seasonalCsvItem.seasons), ['spring', 'summer']);
+assert.equal(seasonalCsvItem.availableFrom, '2026-03-01');
+assert.equal(seasonalCsvItem.availableUntil, '2026-08-31');
+assert.equal(seasonalCsvItem.memo, '確認用');
+assert.match(test.buildMenuCsv([stableIdItem, pausedCsvItem, seasonalCsvItem]), /^メニューID,店舗ID,料理名,価格,分類,タグ,実額,提供状態,提供区分,季節,提供開始日,提供終了日,メモ,最終更新日\nbase-001,hidaka-001,[^\n]+,提供中,通常,,,,,\nbase-002,hidaka-001,[^\n]+,休止中,通常,,,,,\nbase-003,hidaka-001,[^\n]+,提供中,季節,春\|夏,2026-03-01,2026-08-31,確認用,2026-03-01T10:00:00.000Z\n$/);
+test.setState({ menu: [seasonalCsvItem], history: [] });
+test.mergeImportedData([{ 店舗ID: 'hidaka-001', 料理名: seasonalCsvItem.name, 価格: 350, 分類: '小皿', タグ: '魚介', 実額: true }], 'menu', 'merge');
+assert.equal(test.getState().menu[0].price, 350);
+assert.equal(test.getState().menu[0].offeringType, 'seasonal');
+assert.deepEqual(Array.from(test.getState().menu[0].seasons), ['spring', 'summer']);
+assert.equal(test.getState().menu[0].availableFrom, '2026-03-01');
 const normalizedStore = test.normalizeStore({ 店舗ID: 'hidaka-001', 店名: 'やきとり日高', エリア: '', メモ: '' });
 assert.equal(normalizedStore.id, 'hidaka-001');
 assert.equal(normalizedStore.name, 'やきとり日高');
 assert.equal(normalizedStore.area, '');
 assert.equal(normalizedStore.memo, '');
 assert.equal(test.normalizeStores([{ id: 'duplicate', name: '店舗1' }, { id: 'duplicate', name: '店舗2' }]).length, 0);
+const tagSortedMenu = [
+  { name: 'タグなし', tags: [], available: true },
+  { name: '野菜料理', tags: ['野菜'], available: true },
+  { name: '魚介料理', tags: ['魚介', '軽め'], available: true },
+  { name: '豚料理', tags: ['豚'], available: true }
+].sort(test.compareMenuEditorItems);
+assert.deepEqual(Array.from(tagSortedMenu, item => item.name), ['豚料理', '魚介料理', '野菜料理', 'タグなし']);
+const categorySortedMenu = [
+  { name: '締め料理', category: 'finish', tags: [], available: true },
+  { name: '小皿料理', category: 'small', tags: [], available: true },
+  { name: '飲み物', category: 'drink', tags: [], available: true }
+].sort(test.compareMenuEditorItemsByCategory);
+assert.deepEqual(Array.from(categorySortedMenu, item => item.name), ['飲み物', '小皿料理', '締め料理']);
 const reorderedDefaults = test.normalizeDefaultMenuRows([
   { メニューID: 'fixed-b', 料理名: '二番目から移動', 価格: 200, 分類: '小皿', タグ: '', 実額: true },
   { メニューID: 'fixed-a', 料理名: '一番目から移動', 価格: 100, 分類: '小皿', タグ: '', 実額: true }
@@ -86,7 +115,17 @@ const pausedSkewer = { ...meatSkewer, id: 'paused-skewer', name: '休止中の�
 test.setState({ menu: [small, pausedDrink, pausedSkewer], history: [], outOfStock: { date: today, ids: [] } });
 const pausedItemsExcluded = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: pausedDrink.id, skewerCount: 1, wantFinish: false });
 assert.equal(pausedItemsExcluded.items.some(item => item.available === false), false);
-assert.match(pausedItemsExcluded.unavailable.join('\n'), /提供休止中/);
+assert.match(pausedItemsExcluded.unavailable.join('\n'), /休止中または提供期間外/);
+
+const futureSeasonal = test.normalizeMenuItem({ id: 'future-seasonal', name: '将来の季節料理', price: 300, category: 'small', tags: ['魚介'], actual: true, available: true, offeringType: 'seasonal', seasons: ['spring'], availableFrom: '2099-03-01', availableUntil: '2099-05-31' });
+test.setState({ menu: [small, futureSeasonal], history: [], outOfStock: { date: today, ids: [] } });
+const futureSeasonalExcluded = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: 'none', skewerCount: 0, wantFinish: false });
+assert.equal(futureSeasonalExcluded.items.some(item => item.id === futureSeasonal.id), false);
+const activeSeasonal = test.normalizeMenuItem({ id: 'active-seasonal', name: '提供中の季節料理', price: 300, category: 'small', tags: ['魚介'], actual: true, available: true, offeringType: 'seasonal', seasons: ['autumn'], availableFrom: '2020-01-01', availableUntil: '2099-12-31' });
+test.setState({ menu: [activeSeasonal], history: [], outOfStock: { date: today, ids: [] } });
+const activeSeasonalOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: 'none', skewerCount: 0, wantFinish: false });
+assert.equal(activeSeasonalOrder.items.some(item => item.id === activeSeasonal.id), true);
+assert.match(activeSeasonalOrder.items.find(item => item.id === activeSeasonal.id).recommendationReason, /季節メニュー/);
 
 const recentDish = { id: 'recent-dish', name: '最近食べた料理', price: 300, category: 'small', tags: [], actual: true };
 const freshDish = { id: 'fresh-dish', name: 'まだ食べていない料理', price: 300, category: 'small', tags: [], actual: true };
@@ -244,7 +283,7 @@ assert.equal(pricedLegacyHistory.items[0].subtotal, 500);
 assert.equal(pricedLegacyHistory.total, 500);
 
 test.setState({
-  dataSchemaVersion: 3,
+  dataSchemaVersion: 4,
   defaultMenuVersion: 'test-version',
   stores: [{ id: 'hidaka-001', name: 'やきとり日高', area: '', memo: '' }],
   activeStoreId: 'hidaka-001',
@@ -252,20 +291,23 @@ test.setState({
   initialMenu: [drink, small],
   history: [{ id: 'history-1', date: '2026-08-20', items: [{ name: small.name, price: small.price }] }],
   preferences,
+  menuSortMode: 'category',
   outOfStock: { date: '2026-08-20', ids: ['sold-out'] },
   pendingOrder: normalizedPending
 });
 const fullBackup = test.createFullBackupPayload();
 assert.equal(fullBackup.format, 'hidaka-order-full-backup');
-assert.equal(fullBackup.schemaVersion, 3);
+assert.equal(fullBackup.schemaVersion, 4);
 assert.equal(fullBackup.source.storeId, 'hidaka-001');
 assert.equal(fullBackup.data.stores[0].name, 'やきとり日高');
 assert.equal(fullBackup.data.menu.length, 3);
+assert.equal(fullBackup.data.menuSortMode, 'category');
 const restoredBackup = test.normalizeFullBackup(fullBackup);
 assert.equal(restoredBackup.state.activeStoreId, 'hidaka-001');
-assert.equal(restoredBackup.state.dataSchemaVersion, 3);
+assert.equal(restoredBackup.state.dataSchemaVersion, 4);
 assert.equal(restoredBackup.state.stores[0].id, 'hidaka-001');
 assert.equal(restoredBackup.state.menu.length, 3);
+assert.equal(restoredBackup.state.menuSortMode, 'category');
 assert.equal(restoredBackup.state.initialMenu.length, 2);
 assert.equal(restoredBackup.state.history[0].items[0].price, small.price);
 assert.equal(restoredBackup.state.history[0].items[0].menuId, small.id);
@@ -273,22 +315,28 @@ assert.equal(restoredBackup.state.history[0].items[0].orderIndex, 1);
 assert.equal(restoredBackup.state.history[0].items[0].quantity, 1);
 assert.equal(restoredBackup.state.history[0].context.budget, null);
 assert.equal(restoredBackup.state.pendingOrder.order.items[0].manuallyAdded, true);
+const versionThreeBackup = JSON.parse(JSON.stringify(fullBackup));
+versionThreeBackup.schemaVersion = 3;
+const restoredVersionThreeBackup = test.normalizeFullBackup(versionThreeBackup);
+assert.equal(restoredVersionThreeBackup.state.dataSchemaVersion, 4);
 const versionTwoBackup = JSON.parse(JSON.stringify(fullBackup));
 versionTwoBackup.schemaVersion = 2;
 const restoredVersionTwoBackup = test.normalizeFullBackup(versionTwoBackup);
-assert.equal(restoredVersionTwoBackup.state.dataSchemaVersion, 3);
+assert.equal(restoredVersionTwoBackup.state.dataSchemaVersion, 4);
 assert.equal(restoredVersionTwoBackup.state.history[0].context.budget, null);
 const legacyBackup = JSON.parse(JSON.stringify(fullBackup));
 legacyBackup.schemaVersion = 1;
 delete legacyBackup.data.stores;
 delete legacyBackup.data.activeStoreId;
 delete legacyBackup.data.dataSchemaVersion;
+delete legacyBackup.data.menuSortMode;
 delete legacyBackup.source.storeId;
 const restoredLegacyBackup = test.normalizeFullBackup(legacyBackup);
 assert.equal(restoredLegacyBackup.state.activeStoreId, 'hidaka-001');
-assert.equal(restoredLegacyBackup.state.dataSchemaVersion, 3);
+assert.equal(restoredLegacyBackup.state.dataSchemaVersion, 4);
 assert.equal(restoredLegacyBackup.state.stores[0].name, 'やきとり日高');
+assert.equal(restoredLegacyBackup.state.menuSortMode, 'tag');
 assert.throws(() => test.normalizeFullBackup({ format: 'unknown', schemaVersion: 1, data: {} }), /完全バックアップではありません/);
-assert.throws(() => test.normalizeFullBackup({ ...fullBackup, schemaVersion: 4 }), /未対応/);
+assert.throws(() => test.normalizeFullBackup({ ...fullBackup, schemaVersion: 5 }), /未対応/);
 
-console.log('履歴構造、注文時状況、旧履歴移行、店舗ID、提供休止、品切れ置換、注文条件、未記録注文、完全バックアップを確認しました。');
+console.log('履歴構造、注文時状況、季節・期間限定、旧履歴移行、店舗ID、提供休止、品切れ置換、注文条件、未記録注文、完全バックアップを確認しました。');

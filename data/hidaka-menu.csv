@@ -1,102 +1,102 @@
-メニューID,店舗ID,料理名,価格,分類,タグ,実額,提供状態
-base-001,hidaka-001,漬物盛合せ（白菜漬＋大根酢）,330,small,vegetable|light,true,提供中
-base-002,hidaka-001,珍味盛合せ（貝わさび＋イカ塩辛）,385,small,seafood|light,true,提供中
-base-003,hidaka-001,島らっきょ,550,small,vegetable|light,true,提供中
-base-004,hidaka-001,豆腐サラダ,715,small,vegetable,true,提供中
-base-005,hidaka-001,タラチャンジャ,385,small,seafood|light,true,提供中
-base-006,hidaka-001,焼 空豆（鹿児島産）,650,small,vegetable,true,提供中
-base-007,hidaka-001,サバの塩焼,550,small,seafood,true,提供中
-base-008,hidaka-001,ブリカマの塩焼,770,small,seafood,true,提供中
-base-009,hidaka-001,小鉢① サバの南蛮漬け,330,small,seafood|light,true,提供中
-base-010,hidaka-001,小鉢② たけのこの甘辛炒め,330,small,vegetable|light,true,提供中
-base-011,hidaka-001,ニンニク皮巻串（塩 or タレ）,198,skewer,chicken|vegetable,true,提供中
-base-012,hidaka-001,地鶏テール串（ぼんじり）（ニンニク塩 or タレ）,198,skewer,chicken,true,提供中
-base-013,hidaka-001,なんこつ団子,198,skewer,chicken,true,提供中
-base-014,hidaka-001,イカ下足串（塩 or タレ）,308,skewer,seafood,true,提供中
-base-015,hidaka-001,赤センマイ串（ギアラ）牛の第4胃袋,253,skewer,beef,true,提供中
-base-016,hidaka-001,菜の花の豚バラ巻き串,550,skewer,pork|vegetable,true,提供中
-base-017,hidaka-001,ベーコンレタス巻き串,220,skewer,pork|vegetable,true,提供中
-base-018,hidaka-001,ピーマン肉詰め串,242,skewer,vegetable,true,提供中
-base-019,hidaka-001,やきいも串,220,skewer,vegetable,true,提供中
-base-020,hidaka-001,種子島産・ニガダケの豚バラ巻,275,skewer,pork|vegetable,true,提供中
-base-021,hidaka-001,山芋の豚バラ巻,275,skewer,pork|vegetable|light,true,提供中
-base-022,hidaka-001,春蘭の牛バラ巻,330,skewer,pork|beef,true,提供中
-base-023,hidaka-001,熊本産・甘とうのあぶり焼 おかかのせ,330,small,vegetable|light,true,提供中
-base-024,hidaka-001,【冷】ぶっかけ 山かけ冷やしうどん,770,finish,finish|noodle,true,提供中
-base-025,hidaka-001,【温】ばさらソース焼そば,770,finish,finish|noodle,true,提供中
-base-026,hidaka-001,とり皮,143,skewer,chicken,true,提供中
-base-027,hidaka-001,はつ（心臓）,143,skewer,chicken,true,提供中
-base-028,hidaka-001,四つ身（もも肉）,165,skewer,chicken,true,提供中
-base-029,hidaka-001,手羽先,165,skewer,chicken,true,提供中
-base-030,hidaka-001,うずらの卵,198,skewer,chicken,true,提供中
-base-031,hidaka-001,砂ずり,143,skewer,chicken,true,提供中
-base-032,hidaka-001,きも（レバー）,143,skewer,chicken,true,提供中
-base-033,hidaka-001,さんかく（なんこつ）,143,skewer,chicken,true,提供中
-base-034,hidaka-001,つくね（手造り）,198,skewer,chicken,true,提供中
-base-035,hidaka-001,牛さがり,308,skewer,beef,true,提供中
-base-036,hidaka-001,バラ,165,skewer,pork,true,提供中
-base-037,hidaka-001,バラなんこつ,220,skewer,pork,true,提供中
-base-038,hidaka-001,のどなんこつ,198,skewer,pork,true,提供中
-base-039,hidaka-001,しろ,165,skewer,pork,true,提供中
-base-040,hidaka-001,みそさがり,165,skewer,pork,true,提供中
-base-041,hidaka-001,あらびきウインナー,165,skewer,pork,true,提供中
-base-042,hidaka-001,雲仙ハム,242,skewer,pork,true,提供中
-base-043,hidaka-001,しそ巻き,220,skewer,,true,提供中
-base-044,hidaka-001,オクラ巻,220,skewer,vegetable,true,提供中
-base-045,hidaka-001,エノキ巻,220,skewer,vegetable,true,提供中
-base-046,hidaka-001,プチトマトベーコン巻,242,skewer,pork|vegetable,true,提供中
-base-047,hidaka-001,チーズベーコン巻,242,skewer,pork,true,提供中
-base-048,hidaka-001,深ネギ,110,skewer,vegetable,true,提供中
-base-049,hidaka-001,ピーマン,110,skewer,vegetable,true,提供中
-base-050,hidaka-001,しいたけ,165,skewer,vegetable,true,提供中
-base-051,hidaka-001,ししとう,165,skewer,vegetable,true,提供中
-base-052,hidaka-001,ししゃも,165,skewer,seafood,true,提供中
-base-053,hidaka-001,えび,198,skewer,seafood,true,提供中
-base-054,hidaka-001,ざこ（きびなご）,220,skewer,seafood,true,提供中
-base-055,hidaka-001,ホタテ,330,skewer,seafood,true,提供中
-base-056,hidaka-001,茶豆（枝豆）,330,small,light|vegetable,true,提供中
-base-057,hidaka-001,種子島産 落花生の塩ゆがき,440,small,light|vegetable,true,提供中
-base-058,hidaka-001,冷奴,275,small,light|vegetable,true,提供中
-base-059,hidaka-001,酢もつ,385,small,light|pork,true,提供中
-base-060,hidaka-001,葉わさび,440,small,light|vegetable,true,提供中
-base-061,hidaka-001,たたき・きゅうり,440,small,light|vegetable,true,提供中
-base-062,hidaka-001,博多の定番・ごまさば,880,small,seafood,true,提供中
-base-063,hidaka-001,地ダコ刺身,880,small,seafood,true,提供中
-base-064,hidaka-001,馬刺し,1540,small,beef,true,提供中
-base-065,hidaka-001,センマイ刺し（自家製辛味噌とポン酢で）,770,small,beef,true,提供中
-base-066,hidaka-001,手造りのポテトサラダ,440,small,vegetable,true,提供中
-base-067,hidaka-001,トマトスライス,385,small,vegetable|light,true,提供中
-base-068,hidaka-001,銀ダラみりん,880,small,seafood,true,提供中
-base-069,hidaka-001,エイヒレ,605,small,seafood|light,true,提供中
-base-070,hidaka-001,めざし,440,small,seafood|light,true,提供中
-base-071,hidaka-001,センポコ鉄板焼き,770,small,beef,true,提供中
-base-072,hidaka-001,焼き豚足,550,small,pork,true,提供中
-base-073,hidaka-001,にら玉,440,small,chicken|vegetable,true,提供中
-base-074,hidaka-001,焼とうもろこし（1本）,660,small,vegetable,true,提供中
-base-075,hidaka-001,じゃがバター,440,small,vegetable,true,提供中
-base-076,hidaka-001,丸天焼き,275,small,light,true,提供中
-base-077,hidaka-001,厚揚焼,330,small,vegetable,true,提供中
-base-078,hidaka-001,お握り（しゃけ or 梅）1ヶ,220,finish,finish|rice,true,提供中
-base-079,hidaka-001,焼きおにぎり 1ヶ,220,finish,finish|rice,true,提供中
-base-080,hidaka-001,お茶漬け（しゃけ or 梅）,440,finish,finish|rice,true,提供中
-base-081,hidaka-001,山かけ冷やしうどん,770,finish,finish|noodle,true,提供中
-base-082,hidaka-001,あおさのみそ汁,220,finish,finish|soup|seafood,true,提供中
-base-083,hidaka-001,なめこの赤だし,220,finish,finish|soup,true,提供中
-base-084,hidaka-001,安納芋のやきいも＋バニラアイス,495,dessert,dessert|sweet|vegetable,true,提供中
-base-085,hidaka-001,生ビール 小グラス,418,drink,drink|alcohol,true,提供中
-base-086,hidaka-001,生ビール 中ジョッキ,605,drink,drink|alcohol,true,提供中
-base-087,hidaka-001,生ビール 大ジョッキ,1078,drink,drink|alcohol,true,提供中
-base-088,hidaka-001,サッポロラガービール（赤星）大瓶,726,drink,drink|alcohol,true,提供中
-base-089,hidaka-001,エビスビール 大瓶,825,drink,drink|alcohol,true,提供中
-base-090,hidaka-001,アサヒスーパードライ 大瓶,726,drink,drink|alcohol,true,提供中
-base-091,hidaka-001,サッポロプレミアムアルコールフリー 小瓶,495,drink,drink|nonalcohol,true,提供中
-base-092,hidaka-001,デュワーズ ハイボール,550,drink,drink|alcohol,true,提供中
-base-093,hidaka-001,メガハイボール,858,drink,drink|alcohol,true,提供中
-base-094,hidaka-001,コークハイ,605,drink,drink|alcohol,true,提供中
-base-095,hidaka-001,ジンジャーハイ,605,drink,drink|alcohol,true,提供中
-base-096,hidaka-001,デュワーズ 12年 水割り,825,drink,drink|alcohol,true,提供中
-base-097,hidaka-001,デュワーズ 12年 ロック,935,drink,drink|alcohol,true,提供中
-base-098,hidaka-001,デュワーズ 12年 ハイボール,990,drink,drink|alcohol,true,提供中
-base-099,hidaka-001,もずく酢,330,small,light,false,提供中
-base-100,hidaka-001,冷やしなす,495,small,vegetable,false,提供中
-base-101,hidaka-001,秋刀魚の塩焼き,1100,main,seafood,true,提供中
+メニューID,店舗ID,料理名,価格,分類,タグ,実額,提供状態,提供区分,季節,提供開始日,提供終了日,メモ,最終更新日
+base-001,hidaka-001,漬物盛合せ（白菜漬＋大根酢）,330,small,野菜|軽め,true,提供中,通常,,,,,
+base-002,hidaka-001,珍味盛合せ（貝わさび＋イカ塩辛）,385,small,魚介|軽め,true,提供中,通常,,,,,
+base-003,hidaka-001,島らっきょ,550,small,野菜|軽め,true,提供中,通常,,,,,
+base-004,hidaka-001,豆腐サラダ,715,small,野菜,true,提供中,通常,,,,,
+base-005,hidaka-001,タラチャンジャ,385,small,魚介|軽め,true,提供中,通常,,,,,
+base-006,hidaka-001,焼 空豆（鹿児島産）,650,small,野菜,true,提供中,通常,,,,,
+base-007,hidaka-001,サバの塩焼,550,small,魚介,true,提供中,通常,,,,,
+base-008,hidaka-001,ブリカマの塩焼,770,small,魚介,true,提供中,通常,,,,,
+base-009,hidaka-001,小鉢① サバの南蛮漬け,330,small,魚介|軽め,true,提供中,通常,,,,,
+base-010,hidaka-001,小鉢② たけのこの甘辛炒め,330,small,野菜|軽め,true,提供中,通常,,,,,
+base-011,hidaka-001,ニンニク皮巻串（塩 or タレ）,198,skewer,鶏|野菜,true,提供中,通常,,,,,
+base-012,hidaka-001,地鶏テール串（ぼんじり）（ニンニク塩 or タレ）,198,skewer,鶏,true,提供中,通常,,,,,
+base-013,hidaka-001,なんこつ団子,198,skewer,鶏,true,提供中,通常,,,,,
+base-014,hidaka-001,イカ下足串（塩 or タレ）,308,skewer,魚介,true,提供中,通常,,,,,
+base-015,hidaka-001,赤センマイ串（ギアラ）牛の第4胃袋,253,skewer,牛,true,提供中,通常,,,,,
+base-016,hidaka-001,菜の花の豚バラ巻き串,550,skewer,豚|野菜,true,提供中,通常,,,,,
+base-017,hidaka-001,ベーコンレタス巻き串,220,skewer,豚|野菜,true,提供中,通常,,,,,
+base-018,hidaka-001,ピーマン肉詰め串,242,skewer,野菜,true,提供中,通常,,,,,
+base-019,hidaka-001,やきいも串,220,skewer,野菜,true,提供中,通常,,,,,
+base-020,hidaka-001,種子島産・ニガダケの豚バラ巻,275,skewer,豚|野菜,true,提供中,通常,,,,,
+base-021,hidaka-001,山芋の豚バラ巻,275,skewer,豚|野菜|軽め,true,提供中,通常,,,,,
+base-022,hidaka-001,春蘭の牛バラ巻,330,skewer,豚|牛,true,提供中,通常,,,,,
+base-023,hidaka-001,熊本産・甘とうのあぶり焼 おかかのせ,330,small,野菜|軽め,true,提供中,通常,,,,,
+base-024,hidaka-001,【冷】ぶっかけ 山かけ冷やしうどん,770,finish,締め|麺,true,提供中,通常,,,,,
+base-025,hidaka-001,【温】ばさらソース焼そば,770,finish,締め|麺,true,提供中,通常,,,,,
+base-026,hidaka-001,とり皮,143,skewer,鶏,true,提供中,通常,,,,,
+base-027,hidaka-001,はつ（心臓）,143,skewer,鶏,true,提供中,通常,,,,,
+base-028,hidaka-001,四つ身（もも肉）,165,skewer,鶏,true,提供中,通常,,,,,
+base-029,hidaka-001,手羽先,165,skewer,鶏,true,提供中,通常,,,,,
+base-030,hidaka-001,うずらの卵,198,skewer,鶏,true,提供中,通常,,,,,
+base-031,hidaka-001,砂ずり,143,skewer,鶏,true,提供中,通常,,,,,
+base-032,hidaka-001,きも（レバー）,143,skewer,鶏,true,提供中,通常,,,,,
+base-033,hidaka-001,さんかく（なんこつ）,143,skewer,鶏,true,提供中,通常,,,,,
+base-034,hidaka-001,つくね（手造り）,198,skewer,鶏,true,提供中,通常,,,,,
+base-035,hidaka-001,牛さがり,308,skewer,牛,true,提供中,通常,,,,,
+base-036,hidaka-001,バラ,165,skewer,豚,true,提供中,通常,,,,,
+base-037,hidaka-001,バラなんこつ,220,skewer,豚,true,提供中,通常,,,,,
+base-038,hidaka-001,のどなんこつ,198,skewer,豚,true,提供中,通常,,,,,
+base-039,hidaka-001,しろ,165,skewer,豚,true,提供中,通常,,,,,
+base-040,hidaka-001,みそさがり,165,skewer,豚,true,提供中,通常,,,,,
+base-041,hidaka-001,あらびきウインナー,165,skewer,豚,true,提供中,通常,,,,,
+base-042,hidaka-001,雲仙ハム,242,skewer,豚,true,提供中,通常,,,,,
+base-043,hidaka-001,しそ巻き,220,skewer,,true,提供中,通常,,,,,
+base-044,hidaka-001,オクラ巻,220,skewer,野菜,true,提供中,通常,,,,,
+base-045,hidaka-001,エノキ巻,220,skewer,野菜,true,提供中,通常,,,,,
+base-046,hidaka-001,プチトマトベーコン巻,242,skewer,豚|野菜,true,提供中,通常,,,,,
+base-047,hidaka-001,チーズベーコン巻,242,skewer,豚,true,提供中,通常,,,,,
+base-048,hidaka-001,深ネギ,110,skewer,野菜,true,提供中,通常,,,,,
+base-049,hidaka-001,ピーマン,110,skewer,野菜,true,提供中,通常,,,,,
+base-050,hidaka-001,しいたけ,165,skewer,野菜,true,提供中,通常,,,,,
+base-051,hidaka-001,ししとう,165,skewer,野菜,true,提供中,通常,,,,,
+base-052,hidaka-001,ししゃも,165,skewer,魚介,true,提供中,通常,,,,,
+base-053,hidaka-001,えび,198,skewer,魚介,true,提供中,通常,,,,,
+base-054,hidaka-001,ざこ（きびなご）,220,skewer,魚介,true,提供中,通常,,,,,
+base-055,hidaka-001,ホタテ,330,skewer,魚介,true,提供中,通常,,,,,
+base-056,hidaka-001,茶豆（枝豆）,330,small,軽め|野菜,true,提供中,通常,,,,,
+base-057,hidaka-001,種子島産 落花生の塩ゆがき,440,small,軽め|野菜,true,提供中,通常,,,,,
+base-058,hidaka-001,冷奴,275,small,軽め|野菜,true,提供中,通常,,,,,
+base-059,hidaka-001,酢もつ,385,small,軽め|豚,true,提供中,通常,,,,,
+base-060,hidaka-001,葉わさび,440,small,軽め|野菜,true,提供中,通常,,,,,
+base-061,hidaka-001,たたき・きゅうり,440,small,軽め|野菜,true,提供中,通常,,,,,
+base-062,hidaka-001,博多の定番・ごまさば,880,small,魚介,true,提供中,通常,,,,,
+base-063,hidaka-001,地ダコ刺身,880,small,魚介,true,提供中,通常,,,,,
+base-064,hidaka-001,馬刺し,1540,small,牛,true,提供中,通常,,,,,
+base-065,hidaka-001,センマイ刺し（自家製辛味噌とポン酢で）,770,small,牛,true,提供中,通常,,,,,
+base-066,hidaka-001,手造りのポテトサラダ,440,small,野菜,true,提供中,通常,,,,,
+base-067,hidaka-001,トマトスライス,385,small,野菜|軽め,true,提供中,通常,,,,,
+base-068,hidaka-001,銀ダラみりん,880,small,魚介,true,提供中,通常,,,,,
+base-069,hidaka-001,エイヒレ,605,small,魚介|軽め,true,提供中,通常,,,,,
+base-070,hidaka-001,めざし,440,small,魚介|軽め,true,提供中,通常,,,,,
+base-071,hidaka-001,センポコ鉄板焼き,770,small,牛,true,提供中,通常,,,,,
+base-072,hidaka-001,焼き豚足,550,small,豚,true,提供中,通常,,,,,
+base-073,hidaka-001,にら玉,440,small,鶏|野菜,true,提供中,通常,,,,,
+base-074,hidaka-001,焼とうもろこし（1本）,660,small,野菜,true,提供中,通常,,,,,
+base-075,hidaka-001,じゃがバター,440,small,野菜,true,提供中,通常,,,,,
+base-076,hidaka-001,丸天焼き,275,small,軽め,true,提供中,通常,,,,,
+base-077,hidaka-001,厚揚焼,330,small,野菜,true,提供中,通常,,,,,
+base-078,hidaka-001,お握り（しゃけ or 梅）1ヶ,220,finish,締め|ご飯,true,提供中,通常,,,,,
+base-079,hidaka-001,焼きおにぎり 1ヶ,220,finish,締め|ご飯,true,提供中,通常,,,,,
+base-080,hidaka-001,お茶漬け（しゃけ or 梅）,440,finish,締め|ご飯,true,提供中,通常,,,,,
+base-081,hidaka-001,山かけ冷やしうどん,770,finish,締め|麺,true,提供中,通常,,,,,
+base-082,hidaka-001,あおさのみそ汁,220,finish,締め|汁物|魚介,true,提供中,通常,,,,,
+base-083,hidaka-001,なめこの赤だし,220,finish,締め|汁物,true,提供中,通常,,,,,
+base-084,hidaka-001,安納芋のやきいも＋バニラアイス,495,dessert,デザート|甘いもの|野菜,true,提供中,通常,,,,,
+base-085,hidaka-001,生ビール 小グラス,418,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-086,hidaka-001,生ビール 中ジョッキ,605,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-087,hidaka-001,生ビール 大ジョッキ,1078,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-088,hidaka-001,サッポロラガービール（赤星）大瓶,726,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-089,hidaka-001,エビスビール 大瓶,825,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-090,hidaka-001,アサヒスーパードライ 大瓶,726,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-091,hidaka-001,サッポロプレミアムアルコールフリー 小瓶,495,drink,飲み物|ノンアルコール,true,提供中,通常,,,,,
+base-092,hidaka-001,デュワーズ ハイボール,550,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-093,hidaka-001,メガハイボール,858,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-094,hidaka-001,コークハイ,605,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-095,hidaka-001,ジンジャーハイ,605,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-096,hidaka-001,デュワーズ 12年 水割り,825,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-097,hidaka-001,デュワーズ 12年 ロック,935,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-098,hidaka-001,デュワーズ 12年 ハイボール,990,drink,飲み物|アルコール,true,提供中,通常,,,,,
+base-099,hidaka-001,もずく酢,330,small,軽め,false,提供中,通常,,,,,
+base-100,hidaka-001,冷やしなす,495,small,野菜,false,提供中,通常,,,,,
+base-101,hidaka-001,秋刀魚の塩焼き,1100,main,魚介,true,提供中,通常,,,,,
