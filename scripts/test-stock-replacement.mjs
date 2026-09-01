@@ -6,7 +6,7 @@ const appPath = new URL('../app.js', import.meta.url);
 const source = readFileSync(appPath, 'utf8');
 const instrumented = source.replace(
   /\n\s*boot\(\);\s*\n\}\)\(\);\s*$/,
-  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, regenerateOrderKeepingManualItems, normalizePendingOrder, normalizeHistoryItem, normalizeVisitContext, createVisitContext, createHistoryRecord, normalizeStore, normalizeStores, normalizeMenuItem, normalizeDefaultMenuRows, compareMenuEditorItems, compareMenuEditorItemsByCategory, buildMenuCsv, mergeImportedData, createFullBackupPayload, normalizeFullBackup, setState: value => { state = value; }, getState: () => state };\n})();\n'
+  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, replaceOrderItemManually, regenerateOrderKeepingManualItems, normalizePendingOrder, normalizeHistoryItem, normalizeVisitContext, createVisitContext, createHistoryRecord, normalizeStore, normalizeStores, normalizeMenuItem, normalizeDefaultMenuRows, compareMenuEditorItems, compareMenuEditorItemsByCategory, buildMenuCsv, mergeImportedData, createFullBackupPayload, normalizeFullBackup, setState: value => { state = value; }, getState: () => state };\n})();\n'
 );
 assert.notEqual(instrumented, source, 'app.js のテスト準備に失敗しました。');
 
@@ -93,10 +93,24 @@ assert.match(removed.unavailable.join('\n'), /この品だけ外しました/);
 
 const today = new Intl.DateTimeFormat('sv-SE').format(new Date());
 const manuallyAdded = { id: 'manual', name: '手動追加料理', price: 500, category: 'main', tags: [], actual: true, manuallyAdded: true };
+const manualReplacement = { id: 'manual-replacement', name: '自分で選んだ料理', price: 450, category: 'main', tags: ['魚介'], actual: true };
+const manuallyChangedOrder = test.replaceOrderItemManually(originalOrder, 1, manualReplacement, '今回は気分ではない');
+assert.equal(manuallyChangedOrder.items[1].id, manualReplacement.id);
+assert.equal(manuallyChangedOrder.items[1].manuallyChanged, true);
+assert.equal(manuallyChangedOrder.items[1].changedFrom.menuId, small.id);
+assert.equal(manuallyChangedOrder.items[1].changedFrom.name, small.name);
+assert.equal(manuallyChangedOrder.items[1].changeReason, '今回は気分ではない');
+assert.equal(manuallyChangedOrder.total, originalOrder.total - small.price + manualReplacement.price);
+assert.equal(manuallyChangedOrder.excludedIds.length, 0);
 test.setState({ menu: [small, replacement], history: [], outOfStock: { date: today, ids: [] } });
 const regenerated = test.regenerateOrderKeepingManualItems({ ...originalOrder, items: [small, manuallyAdded], total: 800 }, { ...preferences, drink: 'none', skewerCount: 0 });
 assert.equal(regenerated.items.filter(item => item.manuallyAdded).map(item => item.id).join(','), 'manual');
 assert.equal(regenerated.total, regenerated.items.reduce((sum, item) => sum + item.price, 0));
+
+test.setState({ menu: [small, manualReplacement], history: [], outOfStock: { date: today, ids: [] } });
+const changedItemKept = test.regenerateOrderKeepingManualItems(manuallyChangedOrder, { ...preferences, drink: 'none', skewerCount: 0 });
+assert.equal(changedItemKept.items.filter(item => item.manuallyChanged).map(item => item.id).join(','), manualReplacement.id);
+assert.equal(changedItemKept.items.filter(item => ['small', 'main'].includes(item.category)).length, 2);
 
 const finish = { id: 'finish', name: '締め料理', price: 400, category: 'finish', tags: ['締め'], actual: true };
 test.setState({ menu: [finish], history: [], outOfStock: { date: today, ids: [] } });
@@ -109,6 +123,24 @@ const meatSkewer = { id: 'meat-skewer', name: '豚肉串', price: 200, category:
 test.setState({ menu: [small, meatSkewer], history: [], outOfStock: { date: today, ids: [] } });
 const lightOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none', skewerCount: 1, wantFinish: false });
 assert.equal(lightOrder.items.some(item => item.id === 'meat-skewer'), true);
+
+const hungerDishA = { id: 'hunger-a', name: '空腹度料理A', price: 300, category: 'small', tags: ['豚'], actual: true };
+const hungerDishB = { id: 'hunger-b', name: '空腹度料理B', price: 300, category: 'small', tags: ['野菜'], actual: true };
+const hungerDishC = { id: 'hunger-c', name: '空腹度料理C', price: 300, category: 'main', tags: ['魚介'], actual: true };
+const hungerDishCount = order => order.items.filter(item => ['small', 'main'].includes(item.category)).length;
+test.setState({ menu: [hungerDishA, hungerDishB, hungerDishC], history: [], outOfStock: { date: today, ids: [] } });
+const intuitiveLightOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none', skewerCount: 0, wantFinish: false });
+const intuitiveNormalOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'normal', drink: 'none', skewerCount: 0, wantFinish: false });
+const intuitiveHeartyOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'hearty', drink: 'none', skewerCount: 0, wantFinish: false });
+assert.equal(hungerDishCount(intuitiveLightOrder), 1);
+assert.equal(hungerDishCount(intuitiveNormalOrder), 2);
+assert.equal(hungerDishCount(intuitiveHeartyOrder), 3);
+assert.match(intuitiveLightOrder.items.find(item => ['small', 'main'].includes(item.category)).recommendationReason, /串以外 1品/);
+assert.match(intuitiveNormalOrder.items.find(item => ['small', 'main'].includes(item.category)).recommendationReason, /串以外 2品/);
+assert.match(intuitiveHeartyOrder.items.find(item => ['small', 'main'].includes(item.category)).recommendationReason, /串以外 3品/);
+test.setState({ menu: [hungerDishA], history: [], outOfStock: { date: today, ids: [] } });
+const lightStillAllowsMeat = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none', skewerCount: 0, wantFinish: false });
+assert.equal(lightStillAllowsMeat.items.some(item => item.id === hungerDishA.id), true);
 
 const pausedDrink = { ...drink, id: 'paused-drink', name: '休止中の飲み物', available: false };
 const pausedSkewer = { ...meatSkewer, id: 'paused-skewer', name: '休止中の串', available: false };
@@ -129,7 +161,8 @@ assert.match(activeSeasonalOrder.items.find(item => item.id === activeSeasonal.i
 
 const recentDish = { id: 'recent-dish', name: '最近食べた料理', price: 300, category: 'small', tags: [], actual: true };
 const freshDish = { id: 'fresh-dish', name: 'まだ食べていない料理', price: 300, category: 'small', tags: [], actual: true };
-test.setState({ menu: [recentDish, freshDish], history: [{ date: today, items: [{ name: recentDish.name }] }], outOfStock: { date: today, ids: [] } });
+const anotherFreshDish = { id: 'another-fresh-dish', name: 'もう一つの未注文料理', price: 300, category: 'small', tags: [], actual: true };
+test.setState({ menu: [recentDish, freshDish, anotherFreshDish], history: [{ date: today, items: [{ name: recentDish.name }] }], outOfStock: { date: today, ids: [] } });
 const historyAwareOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, avoidRecent: false, drink: 'none', skewerCount: 0, wantFinish: false });
 assert.equal(historyAwareOrder.items.some(item => item.id === 'fresh-dish'), true);
 assert.equal(historyAwareOrder.items.some(item => item.id === 'recent-dish'), false);
@@ -183,6 +216,19 @@ assert.equal(normalizedPending.order.items[0].manuallyAdded, true);
 assert.equal(normalizedPending.order.items[0].recommendationReason, 'メニューから手動で追加');
 assert.equal(test.normalizePendingOrder({ order: { items: [] } }), null);
 
+const normalizedChangedPending = test.normalizePendingOrder({
+  date: '2026-08-20',
+  order: {
+    items: [manuallyChangedOrder.items[1]],
+    preferences: { ...preferences, drink: 'none', skewerCount: 0 },
+    unavailable: [],
+    excludedIds: []
+  }
+});
+assert.equal(normalizedChangedPending.order.items[0].manuallyChanged, true);
+assert.equal(normalizedChangedPending.order.items[0].changedFrom.name, small.name);
+assert.equal(normalizedChangedPending.order.items[0].changeReason, '今回は気分ではない');
+
 test.setState({
   stores: [{ id: 'hidaka-001', name: 'やきとり日高', area: '', memo: '' }],
   activeStoreId: 'hidaka-001',
@@ -191,8 +237,8 @@ test.setState({
 });
 const structuredHistory = test.createHistoryRecord({
   storeId: 'hidaka-001',
-  items: [drink, manuallyAdded, fee],
-  total: drink.price + manuallyAdded.price + fee.price,
+  items: [drink, manuallyChangedOrder.items[1], manuallyAdded, fee],
+  total: drink.price + manualReplacement.price + manuallyAdded.price + fee.price,
   preferences: {
     budget: 3000,
     hunger: 'light',
@@ -213,9 +259,12 @@ assert.equal(structuredHistory.items[0].orderIndex, 1);
 assert.equal(structuredHistory.items[0].quantity, 1);
 assert.equal(structuredHistory.items[0].unitPrice, drink.price);
 assert.equal(structuredHistory.items[0].source, 'recommended');
-assert.equal(structuredHistory.items[1].source, 'manual');
-assert.equal(structuredHistory.items[2].source, 'fixed');
-assert.equal(structuredHistory.total, drink.price + manuallyAdded.price + fee.price);
+assert.equal(structuredHistory.items[1].source, 'changed');
+assert.equal(structuredHistory.items[1].aiSuggestion.name, small.name);
+assert.equal(structuredHistory.items[1].changeReason, '今回は気分ではない');
+assert.equal(structuredHistory.items[2].source, 'manual');
+assert.equal(structuredHistory.items[3].source, 'fixed');
+assert.equal(structuredHistory.total, drink.price + manualReplacement.price + manuallyAdded.price + fee.price);
 assert.equal(structuredHistory.context.budget, 3000);
 assert.equal(structuredHistory.context.hunger, 'light');
 assert.equal(structuredHistory.context.skewerCount, 5);
@@ -283,7 +332,7 @@ assert.equal(pricedLegacyHistory.items[0].subtotal, 500);
 assert.equal(pricedLegacyHistory.total, 500);
 
 test.setState({
-  dataSchemaVersion: 4,
+  dataSchemaVersion: 5,
   defaultMenuVersion: 'test-version',
   stores: [{ id: 'hidaka-001', name: 'やきとり日高', area: '', memo: '' }],
   activeStoreId: 'hidaka-001',
@@ -297,14 +346,14 @@ test.setState({
 });
 const fullBackup = test.createFullBackupPayload();
 assert.equal(fullBackup.format, 'hidaka-order-full-backup');
-assert.equal(fullBackup.schemaVersion, 4);
+assert.equal(fullBackup.schemaVersion, 5);
 assert.equal(fullBackup.source.storeId, 'hidaka-001');
 assert.equal(fullBackup.data.stores[0].name, 'やきとり日高');
 assert.equal(fullBackup.data.menu.length, 3);
 assert.equal(fullBackup.data.menuSortMode, 'category');
 const restoredBackup = test.normalizeFullBackup(fullBackup);
 assert.equal(restoredBackup.state.activeStoreId, 'hidaka-001');
-assert.equal(restoredBackup.state.dataSchemaVersion, 4);
+assert.equal(restoredBackup.state.dataSchemaVersion, 5);
 assert.equal(restoredBackup.state.stores[0].id, 'hidaka-001');
 assert.equal(restoredBackup.state.menu.length, 3);
 assert.equal(restoredBackup.state.menuSortMode, 'category');
@@ -315,14 +364,18 @@ assert.equal(restoredBackup.state.history[0].items[0].orderIndex, 1);
 assert.equal(restoredBackup.state.history[0].items[0].quantity, 1);
 assert.equal(restoredBackup.state.history[0].context.budget, null);
 assert.equal(restoredBackup.state.pendingOrder.order.items[0].manuallyAdded, true);
+const versionFourBackup = JSON.parse(JSON.stringify(fullBackup));
+versionFourBackup.schemaVersion = 4;
+const restoredVersionFourBackup = test.normalizeFullBackup(versionFourBackup);
+assert.equal(restoredVersionFourBackup.state.dataSchemaVersion, 5);
 const versionThreeBackup = JSON.parse(JSON.stringify(fullBackup));
 versionThreeBackup.schemaVersion = 3;
 const restoredVersionThreeBackup = test.normalizeFullBackup(versionThreeBackup);
-assert.equal(restoredVersionThreeBackup.state.dataSchemaVersion, 4);
+assert.equal(restoredVersionThreeBackup.state.dataSchemaVersion, 5);
 const versionTwoBackup = JSON.parse(JSON.stringify(fullBackup));
 versionTwoBackup.schemaVersion = 2;
 const restoredVersionTwoBackup = test.normalizeFullBackup(versionTwoBackup);
-assert.equal(restoredVersionTwoBackup.state.dataSchemaVersion, 4);
+assert.equal(restoredVersionTwoBackup.state.dataSchemaVersion, 5);
 assert.equal(restoredVersionTwoBackup.state.history[0].context.budget, null);
 const legacyBackup = JSON.parse(JSON.stringify(fullBackup));
 legacyBackup.schemaVersion = 1;
@@ -333,10 +386,10 @@ delete legacyBackup.data.menuSortMode;
 delete legacyBackup.source.storeId;
 const restoredLegacyBackup = test.normalizeFullBackup(legacyBackup);
 assert.equal(restoredLegacyBackup.state.activeStoreId, 'hidaka-001');
-assert.equal(restoredLegacyBackup.state.dataSchemaVersion, 4);
+assert.equal(restoredLegacyBackup.state.dataSchemaVersion, 5);
 assert.equal(restoredLegacyBackup.state.stores[0].name, 'やきとり日高');
 assert.equal(restoredLegacyBackup.state.menuSortMode, 'tag');
 assert.throws(() => test.normalizeFullBackup({ format: 'unknown', schemaVersion: 1, data: {} }), /完全バックアップではありません/);
-assert.throws(() => test.normalizeFullBackup({ ...fullBackup, schemaVersion: 5 }), /未対応/);
+assert.throws(() => test.normalizeFullBackup({ ...fullBackup, schemaVersion: 6 }), /未対応/);
 
-console.log('履歴構造、注文時状況、季節・期間限定、旧履歴移行、店舗ID、提供休止、品切れ置換、注文条件、未記録注文、完全バックアップを確認しました。');
+console.log('履歴構造、注文時状況、季節・期間限定、旧履歴移行、店舗ID、提供休止、品切れ置換、手動変更、注文条件、未記録注文、完全バックアップを確認しました。');

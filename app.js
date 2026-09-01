@@ -3,10 +3,10 @@
 
   const STORAGE_KEY = 'hidaka-order-v1';
   const FULL_BACKUP_FORMAT = 'hidaka-order-full-backup';
-  const FULL_BACKUP_SCHEMA_VERSION = 4;
+  const FULL_BACKUP_SCHEMA_VERSION = 5;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
-  const DATA_SCHEMA_VERSION = 4;
-  const APP_VERSION = '1.6.0';
+  const DATA_SCHEMA_VERSION = 5;
+  const APP_VERSION = '1.8.0';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-31-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-01';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
@@ -29,6 +29,8 @@
   const FOOD_MOOD_TAGS = new Set(['pork', 'chicken', 'beef', 'seafood', 'vegetable', 'spicy']);
   const KEEP_SHOCHU_FEE = { id: 'keep-shochu-fee', storeId: DEFAULT_STORE_ID, name: '割代（焼酎キープ）', price: 220, category: 'fee', tags: [], actual: true };
   const ORDER_BUDGET = 3000;
+  const HUNGER_LABEL = { light: '軽め', normal: '普通', hearty: 'がっつり' };
+  const HUNGER_DISH_COUNT = { light: 1, normal: 2, hearty: 3 };
   const PENDING_REMINDER_MS = 10 * 60 * 1000;
   const fallbackMenu = [
     { id: 'highball', name: 'ハイボール', price: 380, category: 'drink', tags: ['drink', 'light'], actual: false },
@@ -210,6 +212,20 @@
     const updatedAt = String(raw.updatedAt ?? raw['最終更新日'] ?? '').trim();
     return { id: String(raw.id || raw['ID'] || raw['メニューID'] || uid()), storeId, name, price: Math.round(price), category, tags: normalizeTags(raw.tags ?? raw['タグ']), actual: actualValue === true || String(actualValue).toLowerCase() === 'true' || String(actualValue) === '1', available: normalizeAvailability(raw), offeringType, seasons, availableFrom, availableUntil, memo, updatedAt };
   }
+  function normalizeSuggestedItem(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const name = String(raw.name ?? raw['メニュー名'] ?? '').trim();
+    if (!name) return null;
+    const priceValue = raw.price ?? raw.unitPrice ?? raw['提案時価格'];
+    const price = priceValue !== null && priceValue !== undefined && priceValue !== '' && Number.isFinite(Number(priceValue)) ? Math.round(Number(priceValue)) : null;
+    return {
+      menuId: String(raw.menuId ?? raw.id ?? raw['メニューID'] ?? '').trim(),
+      name,
+      price,
+      category: String(raw.category ?? raw['分類'] ?? '').trim(),
+      recommendationReason: String(raw.recommendationReason ?? raw['選定理由'] ?? '').trim()
+    };
+  }
   function historyUnitPrice(item) {
     const value = item?.unitPrice ?? item?.price;
     return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Math.round(Number(value)) : null;
@@ -228,8 +244,10 @@
     const rawPrice = source.unitPrice ?? source.price ?? source['注文時価格'] ?? source['価格'];
     const unitPrice = rawPrice !== null && rawPrice !== undefined && rawPrice !== '' && Number.isFinite(Number(rawPrice)) && Number(rawPrice) >= 0 ? Math.round(Number(rawPrice)) : null;
     const sourceValue = String(source.source ?? source['追加区分'] ?? (source.manuallyAdded ? 'manual' : 'legacy')).toLowerCase();
-    const selectionSource = ['recommended', 'manual', 'fixed', 'legacy'].includes(sourceValue) ? sourceValue : 'legacy';
+    const selectionSource = ['recommended', 'manual', 'changed', 'fixed', 'legacy'].includes(sourceValue) ? sourceValue : 'legacy';
     const recommendationReason = String(source.recommendationReason ?? source['選定理由'] ?? '').trim();
+    const aiSuggestion = normalizeSuggestedItem(source.aiSuggestion ?? source['AI提案']);
+    const changeReason = String(source.changeReason ?? source['変更理由'] ?? '').trim();
     return {
       lineId: String(source.lineId ?? source['注文明細ID'] ?? `${historyId}-line-${orderIndex}`),
       menuId,
@@ -240,7 +258,9 @@
       price: unitPrice,
       subtotal: unitPrice === null ? null : unitPrice * quantity,
       source: selectionSource,
-      ...(recommendationReason ? { recommendationReason } : {})
+      ...(recommendationReason ? { recommendationReason } : {}),
+      ...(aiSuggestion ? { aiSuggestion } : {}),
+      ...(changeReason ? { changeReason } : {})
     };
   }
   function normalizeBooleanOrNull(value) {
@@ -344,6 +364,9 @@
       return {
         ...normalized,
         ...(item.manuallyAdded ? { manuallyAdded: true } : {}),
+        ...(item.manuallyChanged ? { manuallyChanged: true } : {}),
+        ...(normalizeSuggestedItem(item.changedFrom) ? { changedFrom: normalizeSuggestedItem(item.changedFrom) } : {}),
+        ...(item.changeReason ? { changeReason: String(item.changeReason) } : {}),
         ...(item.recommendationReason ? { recommendationReason: String(item.recommendationReason) } : {})
       };
     }).filter(Boolean);
@@ -400,6 +423,8 @@
     $('#cancelMenuEdit').addEventListener('click', () => $('#menuItemDialog').close());
     $('#addToOrderForm').addEventListener('submit', addItemToCurrentOrder);
     $('#cancelOrderAddition').addEventListener('click', () => $('#addToOrderDialog').close());
+    $('#changeOrderItemForm').addEventListener('submit', changeCurrentOrderItem);
+    $('#cancelOrderChange').addEventListener('click', () => $('#changeOrderItemDialog').close());
     $('#downloadFullBackup').addEventListener('click', downloadFullBackup);
     $('#restoreFullBackupFile').addEventListener('change', restoreFullBackup);
     $('#importFile').addEventListener('change', importFile);
@@ -562,8 +587,6 @@
       let value = Math.random() * 0.8;
       if (p.moods.some(tag => hasTag(item, tag))) value += 5;
       value -= recent.penalty(item);
-      if (item.category !== 'skewer' && p.hunger === 'light' && hasTag(item, 'light')) value += 1.7;
-      if (item.category !== 'skewer' && p.hunger === 'hearty' && ['main', 'finish'].includes(item.category)) value += 1.5;
       return value - item.price / 12000;
     };
     const reasonFor = (item, kind) => {
@@ -610,26 +633,22 @@
       add(finish, '「締めを入れる」の指定を優先');
     }
 
-    const basePlan = p.hunger === 'light' ? ['small'] : p.hunger === 'normal' ? ['small'] : ['small', 'main'];
-    basePlan.forEach(category => {
-      const item = choose(category, category);
-      add(item, reasonFor(item, category));
-    });
-
-    // If a category is unavailable, use the most suitable remaining dish.
-    const baseCount = p.hunger === 'light' ? 1 : p.hunger === 'normal' ? 1 : 2;
-    const minimum = 1 + (selected.some(item => item.category === 'drink') ? 1 : 0) + baseCount + p.skewerCount + (p.wantFinish ? 1 : 0);
-    while (selected.length < minimum) {
-      let fallbackOptions = candidates(null).filter(item => !['skewer', 'drink', 'dessert', 'fee'].includes(item.category) && (p.wantFinish || item.category !== 'finish'));
-      fallbackOptions = recent.preferNotLatest(fallbackOptions);
-      const fallback = fallbackOptions.sort((a, b) => score(b, 'fallback') - score(a, 'fallback'))[0];
-      if (!fallback) break;
-      add(fallback, reasonFor(fallback, 'fallback'));
+    const dishTarget = HUNGER_DISH_COUNT[p.hunger] || HUNGER_DISH_COUNT.normal;
+    const selectedDishCount = () => selected.filter(item => ['small', 'main'].includes(item.category)).length;
+    while (selectedDishCount() < dishTarget) {
+      let dishOptions = candidates(null).filter(item => ['small', 'main'].includes(item.category));
+      dishOptions = recent.preferNotLatest(dishOptions);
+      const dish = dishOptions.sort((a, b) => score(b, 'dish') - score(a, 'dish'))[0];
+      if (!dish) break;
+      const baseReason = reasonFor(dish, 'dish');
+      add(dish, `${baseReason}／空腹度「${HUNGER_LABEL[p.hunger] || HUNGER_LABEL.normal}」に合わせた串以外 ${dishTarget}品のうちの1品`);
     }
     selected.sort((a, b) => ({ drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 }[a.category] - { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 }[b.category]));
     const total = selected.reduce((sum, item) => sum + item.price, 0);
     const actualSkewerCount = selected.filter(item => item.category === 'skewer').length;
+    const actualDishCount = selectedDishCount();
     if (actualSkewerCount < p.skewerCount) unavailable.push(`利用可能な串が不足しているため、希望の ${p.skewerCount}本に届かず ${actualSkewerCount}本までとなりました。`);
+    if (actualDishCount < dishTarget) unavailable.push(`利用可能な串以外の料理が不足しているため、希望の ${dishTarget}品に届かず ${actualDishCount}品までとなりました。`);
     if (p.wantFinish && !selected.some(item => item.category === 'finish')) unavailable.push('締めの候補が登録されていないか品切れのため、入れられませんでした。');
     const budgetMessage = budgetGuidance(selected, p.budget);
     if (budgetMessage) unavailable.unshift(budgetMessage);
@@ -652,8 +671,6 @@
       let value = item.category === original.category ? 8 : 0;
       if (preferences.moods.some(tag => hasTag(item, tag))) value += 5;
       value -= recent.penalty(item);
-      if (item.category !== 'skewer' && preferences.hunger === 'light' && hasTag(item, 'light')) value += 1.7;
-      if (item.category !== 'skewer' && preferences.hunger === 'hearty' && ['main', 'finish'].includes(item.category)) value += 1.5;
       value -= Math.abs(item.price - original.price) / 1000;
       return value + Math.random() * 0.8;
     };
@@ -690,7 +707,10 @@
         return;
       }
 
-      items.push({ ...replacement, recommendationReason: appendOfferingReason(`品切れの「${item.name}」と同じ分類から代替`, replacement) });
+      const retainedManualState = item.manuallyAdded
+        ? { manuallyAdded: true }
+        : (item.manuallyChanged ? { manuallyChanged: true, changedFrom: item.changedFrom, changeReason: item.changeReason || '' } : {});
+      items.push({ ...replacement, ...retainedManualState, recommendationReason: appendOfferingReason(`品切れの「${item.name}」と同じ分類から代替`, replacement) });
       usedIds.add(String(replacement.id));
       usedNames.add(replacement.name);
       runningTotal += replacement.price;
@@ -706,12 +726,45 @@
 
   function regenerateOrderKeepingManualItems(order, preferences) {
     const manualItems = order?.items.filter(item => item.manuallyAdded) || [];
+    const changedItems = order?.items.filter(item => item.manuallyChanged) || [];
     const regenerated = createOrder(preferences);
-    if (!manualItems.length) return regenerated;
+    if (!manualItems.length && !changedItems.length) return regenerated;
+    changedItems.forEach(changedItem => {
+      const changedFrom = changedItem.changedFrom || {};
+      let replaceIndex = regenerated.items.findIndex(item => String(item.id) === String(changedFrom.menuId || changedFrom.id));
+      if (replaceIndex < 0 && changedFrom.category) replaceIndex = regenerated.items.findIndex(item => item.category === changedFrom.category && item.category !== 'fee');
+      if (replaceIndex >= 0) regenerated.items.splice(replaceIndex, 1);
+    });
     const priority = { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 };
-    const items = [...regenerated.items, ...manualItems].sort((a, b) => priority[a.category] - priority[b.category]);
+    const items = [...regenerated.items, ...changedItems, ...manualItems].sort((a, b) => priority[a.category] - priority[b.category]);
     const total = items.reduce((sum, item) => sum + item.price, 0);
     return { ...regenerated, items, total };
+  }
+
+  function replaceOrderItemManually(order, itemIndex, replacement, changeReason = '') {
+    if (!order?.items?.[itemIndex] || !replacement) return order;
+    const original = order.items[itemIndex];
+    const changedFrom = normalizeSuggestedItem(original.changedFrom) || normalizeSuggestedItem({
+      id: original.id,
+      name: original.name,
+      price: original.price,
+      category: original.category,
+      recommendationReason: original.recommendationReason || ''
+    });
+    const reason = String(changeReason || '').trim();
+    const changedItem = {
+      ...replacement,
+      manuallyChanged: true,
+      changedFrom,
+      changeReason: reason,
+      recommendationReason: `「${changedFrom.name}」から手動で変更${reason ? `（${reason}）` : ''}`
+    };
+    const items = [...order.items];
+    items[itemIndex] = changedItem;
+    const notices = order.unavailable.filter(message => !message.startsWith('目安予算 '));
+    const budgetMessage = budgetGuidance(items, order.budget);
+    if (budgetMessage) notices.unshift(budgetMessage);
+    return { ...order, items, total: items.reduce((sum, item) => sum + item.price, 0), unavailable: notices };
   }
 
   function orderHeading(order) {
@@ -794,13 +847,16 @@
       const moodMark = moodMatches.length ? '<span class="mood-match">★ 気分に合う</span>' : '';
       const reason = item.recommendationReason ? `<small class="recommendation-reason">理由: ${escapeHtml(item.recommendationReason)}</small>` : '';
       const stockControl = item.category === 'fee' ? '' : `<label class="out-of-stock"><input class="out-of-stock-check" type="checkbox" data-item-id="${escapeHtml(item.id)}" /> 品切れ</label>`;
-      return `<li class="order-item"><span class="order-number">${index + 1}</span><div class="order-details"><strong>${escapeHtml(item.name)}${moodMark}</strong><small>${CATEGORY_LABEL[item.category]}</small>${reason}</div><span class="order-price">${yen(item.price)}</span>${stockControl}</li>`;
+      const changedMark = item.manuallyChanged ? '<span class="manual-change-mark">変更済み</span>' : '';
+      const changeControl = item.category === 'fee' || item.manuallyAdded ? '' : `<button class="change-order-item" type="button" data-item-index="${index}">変更</button>`;
+      return `<li class="order-item"><span class="order-number">${index + 1}</span><div class="order-details"><strong>${escapeHtml(item.name)}${moodMark}${changedMark}</strong><small>${CATEGORY_LABEL[item.category]}</small>${reason}</div><div class="order-item-controls"><span class="order-price">${yen(item.price)}</span><div>${changeControl}${stockControl}</div></div></li>`;
     }).join('') : '<li class="order-item"><div class="order-details"><strong>この条件ではメニューを組めませんでした</strong><small>メニュー登録や品切れ状況を確認してください。</small></div></li>';
     const unavailable = order.unavailable.length ? `<p class="notice">${order.unavailable.map(escapeHtml).join('<br>')}</p>` : '';
     $('#result').innerHTML = `<article class="result-card"><div class="result-top"><p>頼む順番まで、このままどうぞ</p><h2>${orderHeading(order)}</h2><div class="price-summary"><strong>${yen(order.total)}</strong><small>目安 ${yen(order.budget)}<br>${budgetStatus}${isEstimate ? '（価格は目安）' : ''}</small></div></div><ol class="order-list">${list}</ol>${unavailable}<div class="result-actions"><button class="secondary-button" type="button" id="regenerate">組み直す</button><button class="secondary-button" type="button" id="reconsiderOutOfStock" disabled>品切れを除いて組み直す</button><button class="secondary-button" type="button" id="addFromMenu">メニューから追加</button><button class="primary-button pending-record-button" type="button" id="recordOrder">この注文を記録</button></div></article>`;
     const reconsiderButton = $('#reconsiderOutOfStock');
     const stockChecks = $$('.out-of-stock-check');
     stockChecks.forEach(check => check.addEventListener('change', () => { reconsiderButton.disabled = !stockChecks.some(input => input.checked); }));
+    $$('.change-order-item').forEach(button => button.addEventListener('click', () => openChangeOrderItemDialog(Number(button.dataset.itemIndex))));
     reconsiderButton.addEventListener('click', () => {
       const checkedIds = stockChecks.filter(input => input.checked).map(input => input.dataset.itemId);
       const excludedIds = markOutOfStock(checkedIds);
@@ -826,8 +882,9 @@
       orderIndex: index + 1,
       quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
       unitPrice: item.price,
-      source: item.manuallyAdded ? 'manual' : (item.category === 'fee' ? 'fixed' : 'recommended'),
-      recommendationReason: item.recommendationReason || ''
+      source: item.manuallyAdded ? 'manual' : (item.manuallyChanged ? 'changed' : (item.category === 'fee' ? 'fixed' : 'recommended')),
+      recommendationReason: item.recommendationReason || '',
+      ...(item.manuallyChanged && item.changedFrom ? { aiSuggestion: item.changedFrom, changeReason: item.changeReason || '' } : {})
     }));
     return normalizeHistoryItem({ id, visitId, storeId: order.storeId || getActiveStoreId(), date, visitedAt, visitTimeKnown: hasVisitTime, recordedAt, total: order.total, context: createVisitContext(order), items }, state.menu);
   }
@@ -882,6 +939,42 @@
     renderOrder(currentOrder);
   }
 
+  function openChangeOrderItemDialog(itemIndex) {
+    const original = currentOrder?.items?.[itemIndex];
+    if (!original || original.category === 'fee' || original.manuallyAdded) return;
+    const excludedIds = new Set(getTodayOutOfStockIds());
+    const choices = state.menu.filter(item => isMenuAvailable(item) && !excludedIds.has(item.id) && item.id !== original.id);
+    const select = $('#replacementItem');
+    select.replaceChildren(...choices.map(item => {
+      const option = document.createElement('option');
+      option.value = item.id;
+      option.textContent = `${item.name}（${CATEGORY_LABEL[item.category]}・${yen(item.price)}）`;
+      return option;
+    }));
+    $('#changeSourceItem').textContent = `${original.name}（${yen(original.price)}）`;
+    $('#orderChangeReason').value = '';
+    $('#changeOrderStatus').textContent = choices.length ? '品切れには登録されず、今回の注文だけを変更します。' : '変更先に選べる商品がありません。';
+    $('#confirmOrderChange').disabled = choices.length === 0;
+    const dialog = $('#changeOrderItemDialog');
+    dialog.dataset.itemIndex = String(itemIndex);
+    dialog.showModal();
+  }
+
+  function changeCurrentOrderItem(event) {
+    event.preventDefault();
+    if (!currentOrder) return;
+    const dialog = $('#changeOrderItemDialog');
+    const itemIndex = Number(dialog.dataset.itemIndex);
+    const replacement = state.menu.find(item => item.id === $('#replacementItem').value);
+    if (!Number.isInteger(itemIndex) || !replacement || !isMenuAvailable(replacement) || getTodayOutOfStockIds().includes(replacement.id)) {
+      $('#changeOrderStatus').textContent = 'この商品には変更できません。メニューの提供状態を確認してください。';
+      return;
+    }
+    currentOrder = replaceOrderItemManually(currentOrder, itemIndex, replacement, $('#orderChangeReason').value);
+    dialog.close();
+    renderOrder(currentOrder);
+  }
+
   function renderHistorySummary() {
     const history = sortedHistory();
     if (!history.length) { $('#historySummary').innerHTML = '<h2>注文履歴</h2><p>まだ履歴はありません。注文を記録すると、次回は食べたばかりの料理を避けられます。</p>'; return; }
@@ -906,7 +999,10 @@
           const unitPrice = historyUnitPrice(item);
           const quantity = item.quantity > 1 ? ` ×${item.quantity}` : '';
           const price = unitPrice !== null ? `<span>${yen(unitPrice * item.quantity)}</span>` : '';
-          return `<li>${escapeHtml(item.name)}${quantity}${price}</li>`;
+          const changeNote = item.source === 'changed' && item.aiSuggestion
+            ? `<small class="history-change-note">AI提案「${escapeHtml(item.aiSuggestion.name)}」から変更${item.changeReason ? `（${escapeHtml(item.changeReason)}）` : ''}</small>`
+            : '';
+          return `<li>${escapeHtml(item.name)}${quantity}${price}${changeNote}</li>`;
         }).join('');
         return `<article class="history-entry"><div class="history-entry-header"><strong>${escapeHtml(entry.date)}${index === 0 ? '（前回）' : ''}</strong><span>${summary}</span></div><ol>${items}</ol></article>`;
       }).join('');

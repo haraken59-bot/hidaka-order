@@ -40,11 +40,12 @@
       <form id="preferenceForm" class="panel preferences">
         <fieldset class="field-group">
           <legend>お腹の空き具合</legend>
-          <div class="choice-row" id="hungerChoices">
-            <label><input type="radio" name="hunger" value="light" /> 軽め</label>
-            <label><input type="radio" name="hunger" value="normal" checked /> 普通</label>
-            <label><input type="radio" name="hunger" value="hearty" /> がっつり</label>
+          <div class="hunger-choice-grid" id="hungerChoices">
+            <label class="hunger-choice-card"><input type="radio" name="hunger" value="light" /><span><strong>軽め</strong><small>串以外</small><b>1品</b></span></label>
+            <label class="hunger-choice-card"><input type="radio" name="hunger" value="normal" checked /><span><strong>普通</strong><small>串以外</small><b>2品</b></span></label>
+            <label class="hunger-choice-card"><input type="radio" name="hunger" value="hearty" /><span><strong>がっつり</strong><small>串以外</small><b>3品</b></span></label>
           </div>
+          <p class="field-help hunger-help">串・飲み物・割代・締めは、この品数とは別に選びます。</p>
         </fieldset>
 
         <div class="field-group">
@@ -206,6 +207,30 @@
         <label>追加する商品<select id="additionalItem" required></select></label>
         <p id="addOrderStatus" class="add-order-status" aria-live="polite"></p>
         <div class="form-actions"><button type="button" class="secondary-button" id="cancelOrderAddition">キャンセル</button><button class="primary-button" id="confirmOrderAddition" type="submit">追加する</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="changeOrderItemDialog" class="item-dialog">
+      <form id="changeOrderItemForm">
+        <div>
+          <p class="eyebrow">品切れとは別の変更</p>
+          <h2>おすすめ商品を変更</h2>
+        </div>
+        <p class="change-source-item">元のおすすめ <strong id="changeSourceItem"></strong></p>
+        <label>代わりに頼む商品<select id="replacementItem" required></select></label>
+        <label>変更理由 <small>任意</small>
+          <select id="orderChangeReason">
+            <option value="">理由は記録しない</option>
+            <option value="今回は気分ではない">今回は気分ではない</option>
+            <option value="前回と重なった">前回と重なった</option>
+            <option value="量を調整した">量を調整した</option>
+            <option value="金額を調整した">金額を調整した</option>
+            <option value="店頭で別の商品を選んだ">店頭で別の商品を選んだ</option>
+            <option value="その他">その他</option>
+          </select>
+        </label>
+        <p id="changeOrderStatus" class="add-order-status" aria-live="polite"></p>
+        <div class="form-actions"><button type="button" class="secondary-button" id="cancelOrderChange">キャンセル</button><button class="primary-button" id="confirmOrderChange" type="submit">この商品に変更</button></div>
       </form>
     </dialog>
 
