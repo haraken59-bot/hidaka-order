@@ -34,6 +34,25 @@ dialog { border:0; border-radius:18px; padding:0; width:min(600px,calc(100% - 24
 .change-source-item { margin:0; padding:10px 12px; border-radius:9px; background:#fff4d7; color:#765b1b; font-size:12px; }
 .change-source-item strong { display:block; margin-top:3px; color:var(--ink); font-size:14px; }
 .history-change-note { display:block; clear:both; padding-top:3px; color:#246344; font-size:11px; }
+.feedback-dialog { width:min(520px,calc(100% - 24px)); }
+.feedback-field { min-width:0; margin:0; padding:0; border:0; }
+.feedback-field legend { margin:0 0 8px; padding:0; font-size:13px; font-weight:700; }
+.feedback-field legend small { color:var(--muted); font-size:11px; font-weight:400; }
+.satisfaction-choices { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; }
+.satisfaction-choices label,.feedback-choice-row label { position:relative; cursor:pointer; }
+.satisfaction-choices input,.feedback-choice-row input { position:absolute; opacity:0; pointer-events:none; }
+.satisfaction-choices span { display:grid; place-items:center; min-height:58px; padding:6px 2px; border:1px solid var(--line); border-radius:9px; background:#fff; text-align:center; }
+.satisfaction-choices b { color:var(--red); font-size:19px; }
+.satisfaction-choices small { color:var(--muted); font-size:9px; font-weight:500; }
+.satisfaction-choices label:has(input:checked) span,.feedback-choice-row label:has(input:checked) span { border-color:#d88e80; background:#fae6df; color:var(--red-dark); font-weight:800; box-shadow:inset 0 0 0 1px #dca198; }
+.feedback-choice-row { display:flex; flex-wrap:wrap; gap:7px; }
+.feedback-choice-row span { display:block; padding:8px 10px; border:1px solid var(--line); border-radius:99px; background:#fff; color:#5d524c; font-size:12px; }
+.feedback-clear-button { margin-top:6px; font-size:10px; }
+.history-feedback { margin:10px 0 5px; padding:9px 10px; border-radius:9px; background:#edf6f0; color:#246344; }
+.history-feedback strong { font-size:12px; }
+.history-feedback p { margin:4px 0 0; color:#4d6256; font-size:12px; white-space:pre-wrap; }
+.history-feedback-empty { margin:9px 0 4px; color:var(--muted); font-size:11px; }
+.edit-feedback { margin-top:5px; }
 @media (max-width:480px) {
   .order-item { align-items:flex-start; gap:8px; }
   .order-number { margin-top:2px; }

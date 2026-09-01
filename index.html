@@ -245,6 +245,56 @@
       <div class="dialog-content history-list" id="historyList"></div>
     </dialog>
 
+    <dialog id="feedbackDialog" class="item-dialog feedback-dialog">
+      <form id="feedbackForm">
+        <div>
+          <p class="eyebrow">注文後の感想</p>
+          <h2>今回どうでしたか？</h2>
+        </div>
+        <p id="feedbackOrderInfo" class="dialog-note"></p>
+        <fieldset class="feedback-field">
+          <legend>満足度 <small>任意</small></legend>
+          <div class="satisfaction-choices">
+            <label><input type="radio" name="satisfaction" value="1" /><span><b>1</b><small>残念</small></span></label>
+            <label><input type="radio" name="satisfaction" value="2" /><span><b>2</b><small>いまひとつ</small></span></label>
+            <label><input type="radio" name="satisfaction" value="3" /><span><b>3</b><small>普通</small></span></label>
+            <label><input type="radio" name="satisfaction" value="4" /><span><b>4</b><small>満足</small></span></label>
+            <label><input type="radio" name="satisfaction" value="5" /><span><b>5</b><small>大満足</small></span></label>
+          </div>
+          <button id="clearSatisfaction" class="text-button feedback-clear-button" type="button">満足度を未選択に戻す</button>
+        </fieldset>
+        <fieldset class="feedback-field">
+          <legend>次回の希望 <small>任意</small></legend>
+          <div class="feedback-choice-row">
+            <label><input type="radio" name="repeatPreference" value="none" checked /><span>未選択</span></label>
+            <label><input type="radio" name="repeatPreference" value="again" /><span>また頼みたい</span></label>
+            <label><input type="radio" name="repeatPreference" value="avoid" /><span>次回は避けたい</span></label>
+          </div>
+        </fieldset>
+        <fieldset class="feedback-field">
+          <legend>量 <small>任意</small></legend>
+          <div class="feedback-choice-row">
+            <label><input type="radio" name="feedbackAmount" value="none" checked /><span>未選択</span></label>
+            <label><input type="radio" name="feedbackAmount" value="small" /><span>少ない</span></label>
+            <label><input type="radio" name="feedbackAmount" value="just" /><span>ちょうどよい</span></label>
+            <label><input type="radio" name="feedbackAmount" value="large" /><span>多い</span></label>
+          </div>
+        </fieldset>
+        <fieldset class="feedback-field">
+          <legend>金額感 <small>任意</small></legend>
+          <div class="feedback-choice-row">
+            <label><input type="radio" name="priceFeeling" value="none" checked /><span>未選択</span></label>
+            <label><input type="radio" name="priceFeeling" value="cheap" /><span>安い</span></label>
+            <label><input type="radio" name="priceFeeling" value="fair" /><span>適切</span></label>
+            <label><input type="radio" name="priceFeeling" value="expensive" /><span>高い</span></label>
+          </div>
+        </fieldset>
+        <label>コメント <small>任意・300文字まで</small><textarea id="feedbackComment" rows="3" maxlength="300" placeholder="次回に覚えておきたいこと"></textarea></label>
+        <p id="feedbackStatus" class="dialog-note"></p>
+        <div class="form-actions"><button type="button" class="secondary-button" id="feedbackLater">後で入力</button><button class="primary-button" type="submit">感想を保存</button></div>
+      </form>
+    </dialog>
+
     <dialog id="pendingOrderDialog" class="item-dialog pending-order-dialog">
       <form id="pendingOrderForm">
         <div>

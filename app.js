@@ -3,10 +3,10 @@
 
   const STORAGE_KEY = 'hidaka-order-v1';
   const FULL_BACKUP_FORMAT = 'hidaka-order-full-backup';
-  const FULL_BACKUP_SCHEMA_VERSION = 5;
+  const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
-  const DATA_SCHEMA_VERSION = 5;
-  const APP_VERSION = '1.8.0';
+  const DATA_SCHEMA_VERSION = 6;
+  const APP_VERSION = '1.9.0';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-31-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-01';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
@@ -271,6 +271,38 @@
     if (['false', '0', 'no', 'off', 'いいえ', 'なし', '未利用'].includes(normalized)) return false;
     return null;
   }
+  function normalizeFeedback(raw) {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    const satisfactionValue = Number(source.satisfaction ?? source['満足度']);
+    const satisfaction = Number.isInteger(satisfactionValue) && satisfactionValue >= 1 && satisfactionValue <= 5 ? satisfactionValue : null;
+    const repeatValue = String(source.repeatPreference ?? source['次回意向'] ?? '').trim().toLowerCase();
+    let repeatPreference = ['again', 'avoid', 'none'].includes(repeatValue) ? repeatValue : '';
+    if (!repeatPreference) {
+      const wouldOrderAgain = normalizeBooleanOrNull(source.wouldOrderAgain ?? source['また頼みたい']);
+      const avoidNextTime = normalizeBooleanOrNull(source.avoidNextTime ?? source['次回は避けたい']);
+      repeatPreference = wouldOrderAgain === true ? 'again' : (avoidNextTime === true ? 'avoid' : (wouldOrderAgain === false || avoidNextTime === false ? 'none' : ''));
+    }
+    const amountValue = String(source.amount ?? source['量'] ?? '').trim().toLowerCase();
+    const amountMap = { '少ない': 'small', 'ちょうどよい': 'just', 'ちょうど良い': 'just', '多い': 'large' };
+    const amount = ['small', 'just', 'large'].includes(amountValue) ? amountValue : (amountMap[amountValue] || '');
+    const priceValue = String(source.priceFeeling ?? source['金額感'] ?? '').trim().toLowerCase();
+    const priceMap = { '安い': 'cheap', '適切': 'fair', '高い': 'expensive' };
+    const priceFeeling = ['cheap', 'fair', 'expensive'].includes(priceValue) ? priceValue : (priceMap[priceValue] || '');
+    const updatedAtValue = String(source.updatedAt ?? source['更新日時'] ?? '').trim();
+    return {
+      satisfaction,
+      repeatPreference,
+      wouldOrderAgain: repeatPreference ? repeatPreference === 'again' : null,
+      avoidNextTime: repeatPreference ? repeatPreference === 'avoid' : null,
+      amount,
+      priceFeeling,
+      comment: String(source.comment ?? source['コメント'] ?? '').trim().slice(0, 300),
+      updatedAt: Number.isFinite(new Date(updatedAtValue).getTime()) ? updatedAtValue : ''
+    };
+  }
+  function hasFeedback(feedback) {
+    return Boolean(feedback && (feedback.satisfaction !== null || (feedback.repeatPreference && feedback.repeatPreference !== 'none') || feedback.amount || feedback.priceFeeling || feedback.comment));
+  }
   function normalizeVisitContext(raw, menu = state?.menu || defaultMenu) {
     const source = raw && typeof raw === 'object' ? raw : {};
     const budgetValue = source.budget ?? source['予算'];
@@ -354,7 +386,8 @@
     const recordedAtInput = String(raw.recordedAt ?? raw['記録日時'] ?? '').trim();
     const recordedAt = Number.isFinite(new Date(recordedAtInput).getTime()) ? recordedAtInput : '';
     const context = normalizeVisitContext(raw.context ?? raw['状況'], menu);
-    return { id, visitId, storeId, date, visitedAt, visitTimeKnown: raw.visitTimeKnown === true || hasVisitTime, recordedAt, total, context, items };
+    const feedback = normalizeFeedback(raw.feedback ?? raw['フィードバック']);
+    return { id, visitId, storeId, date, visitedAt, visitTimeKnown: raw.visitTimeKnown === true || hasVisitTime, recordedAt, total, context, items, ...(hasFeedback(feedback) ? { feedback } : {}) };
   }
   function normalizePendingOrder(raw) {
     if (!raw || !raw.order || !Array.isArray(raw.order.items)) return null;
@@ -425,6 +458,9 @@
     $('#cancelOrderAddition').addEventListener('click', () => $('#addToOrderDialog').close());
     $('#changeOrderItemForm').addEventListener('submit', changeCurrentOrderItem);
     $('#cancelOrderChange').addEventListener('click', () => $('#changeOrderItemDialog').close());
+    $('#feedbackForm').addEventListener('submit', saveFeedback);
+    $('#feedbackLater').addEventListener('click', closeFeedbackDialog);
+    $('#clearSatisfaction').addEventListener('click', () => $$('input[name="satisfaction"]').forEach(input => { input.checked = false; }));
     $('#downloadFullBackup').addEventListener('click', downloadFullBackup);
     $('#restoreFullBackupFile').addEventListener('change', restoreFullBackup);
     $('#importFile').addEventListener('change', importFile);
@@ -908,6 +944,7 @@
       button.disabled = true;
       button.classList.remove('pending-record-button');
     }
+    openFeedbackDialog(historyRecord.id);
   }
 
   function openAddToOrderDialog() {
@@ -983,6 +1020,78 @@
     $('#viewHistory').addEventListener('click', openHistoryDialog);
   }
 
+  const FEEDBACK_REPEAT_LABEL = { again: 'また頼みたい', avoid: '次回は避けたい', none: '特になし' };
+  const FEEDBACK_AMOUNT_LABEL = { small: '量が少ない', just: '量はちょうどよい', large: '量が多い' };
+  const FEEDBACK_PRICE_LABEL = { cheap: '金額は安い', fair: '金額は適切', expensive: '金額は高い' };
+
+  function feedbackSummary(feedback) {
+    if (!hasFeedback(feedback)) return '';
+    return [
+      feedback.satisfaction !== null ? `満足度 ${feedback.satisfaction}/5` : '',
+      FEEDBACK_REPEAT_LABEL[feedback.repeatPreference] || '',
+      FEEDBACK_AMOUNT_LABEL[feedback.amount] || '',
+      FEEDBACK_PRICE_LABEL[feedback.priceFeeling] || ''
+    ].filter(Boolean).join('・');
+  }
+
+  function openFeedbackDialog(historyId, returnToHistory = false) {
+    const entry = state.history.find(item => item.id === historyId);
+    if (!entry) return;
+    const historyDialog = $('#historyDialog');
+    if (historyDialog.open) historyDialog.close();
+    const form = $('#feedbackForm');
+    form.reset();
+    const feedback = normalizeFeedback(entry.feedback);
+    if (feedback.satisfaction !== null) {
+      const satisfaction = $(`input[name="satisfaction"][value="${feedback.satisfaction}"]`);
+      if (satisfaction) satisfaction.checked = true;
+    }
+    const repeatPreference = $(`input[name="repeatPreference"][value="${feedback.repeatPreference || 'none'}"]`);
+    if (repeatPreference) repeatPreference.checked = true;
+    const amount = $(`input[name="feedbackAmount"][value="${feedback.amount || 'none'}"]`);
+    if (amount) amount.checked = true;
+    const priceFeeling = $(`input[name="priceFeeling"][value="${feedback.priceFeeling || 'none'}"]`);
+    if (priceFeeling) priceFeeling.checked = true;
+    $('#feedbackComment').value = feedback.comment || '';
+    $('#feedbackOrderInfo').textContent = `${entry.date}・${entry.items.length}品・${entry.total !== null ? yen(entry.total) : '金額記録なし'}`;
+    $('#feedbackStatus').textContent = hasFeedback(feedback) ? '保存済みの内容を編集できます。' : 'すべて任意です。入力しない項目があっても構いません。';
+    $('#feedbackLater').textContent = returnToHistory ? 'キャンセル' : '後で入力';
+    const dialog = $('#feedbackDialog');
+    dialog.dataset.historyId = historyId;
+    dialog.dataset.returnToHistory = returnToHistory ? 'true' : 'false';
+    dialog.showModal();
+  }
+
+  function closeFeedbackDialog() {
+    const dialog = $('#feedbackDialog');
+    const returnToHistory = dialog.dataset.returnToHistory === 'true';
+    if (dialog.open) dialog.close();
+    if (returnToHistory) openHistoryDialog();
+  }
+
+  function saveFeedback(event) {
+    event.preventDefault();
+    const dialog = $('#feedbackDialog');
+    const entry = state.history.find(item => item.id === dialog.dataset.historyId);
+    if (!entry) return;
+    const satisfaction = $('input[name="satisfaction"]:checked');
+    const repeatPreference = $('input[name="repeatPreference"]:checked')?.value || 'none';
+    const amountValue = $('input[name="feedbackAmount"]:checked')?.value || 'none';
+    const priceValue = $('input[name="priceFeeling"]:checked')?.value || 'none';
+    const feedback = normalizeFeedback({
+      satisfaction: satisfaction ? Number(satisfaction.value) : null,
+      repeatPreference: repeatPreference === 'none' ? '' : repeatPreference,
+      amount: amountValue === 'none' ? '' : amountValue,
+      priceFeeling: priceValue === 'none' ? '' : priceValue,
+      comment: $('#feedbackComment').value,
+      updatedAt: new Date().toISOString()
+    });
+    if (hasFeedback(feedback)) entry.feedback = feedback;
+    else delete entry.feedback;
+    saveState();
+    closeFeedbackDialog();
+  }
+
   function openHistoryDialog() {
     const history = sortedHistory();
     const list = $('#historyList');
@@ -1004,10 +1113,16 @@
             : '';
           return `<li>${escapeHtml(item.name)}${quantity}${price}${changeNote}</li>`;
         }).join('');
-        return `<article class="history-entry"><div class="history-entry-header"><strong>${escapeHtml(entry.date)}${index === 0 ? '（前回）' : ''}</strong><span>${summary}</span></div><ol>${items}</ol></article>`;
+        const feedbackText = feedbackSummary(entry.feedback);
+        const feedbackBlock = feedbackText || entry.feedback?.comment
+          ? `<div class="history-feedback"><strong>${escapeHtml(feedbackText || '感想')}</strong>${entry.feedback?.comment ? `<p>${escapeHtml(entry.feedback.comment)}</p>` : ''}</div>`
+          : '<p class="history-feedback-empty">感想はまだありません。</p>';
+        return `<article class="history-entry"><div class="history-entry-header"><strong>${escapeHtml(entry.date)}${index === 0 ? '（前回）' : ''}</strong><span>${summary}</span></div><ol>${items}</ol>${feedbackBlock}<button class="text-button edit-feedback" type="button" data-history-id="${escapeHtml(entry.id)}">${hasFeedback(entry.feedback) ? '感想を編集' : '感想を入力'}</button></article>`;
       }).join('');
+      $$('.edit-feedback', list).forEach(button => button.addEventListener('click', () => openFeedbackDialog(button.dataset.historyId, true)));
     }
-    $('#historyDialog').showModal();
+    const dialog = $('#historyDialog');
+    if (!dialog.open) dialog.showModal();
   }
 
   function openDataDialog() {
