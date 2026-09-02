@@ -43,9 +43,14 @@
           <div class="hunger-choice-grid" id="hungerChoices">
             <label class="hunger-choice-card"><input type="radio" name="hunger" value="light" /><span><strong>軽め</strong><small>串以外</small><b>1品</b></span></label>
             <label class="hunger-choice-card"><input type="radio" name="hunger" value="normal" checked /><span><strong>普通</strong><small>串以外</small><b>2品</b></span></label>
-            <label class="hunger-choice-card"><input type="radio" name="hunger" value="hearty" /><span><strong>がっつり</strong><small>串以外</small><b>3品</b></span></label>
           </div>
           <p class="field-help hunger-help">串・飲み物・割代・締めは、この品数とは別に選びます。</p>
+        </fieldset>
+
+        <fieldset class="field-group dish-candidate-section" id="dishCandidateSection">
+          <legend>まず1品選ぶ <span class="optional">空腹度に合わせた候補</span></legend>
+          <div class="dish-candidate-grid" id="dishCandidates" role="radiogroup" aria-label="串以外の料理候補"></div>
+          <p class="field-help dish-candidate-status" id="dishCandidateStatus" aria-live="polite">候補を準備しています。</p>
         </fieldset>
 
         <div class="field-group">
@@ -72,7 +77,7 @@
           <label class="toggle"><input id="wantFinish" type="checkbox" /><span></span>締めを入れる</label>
         </div>
 
-        <button class="primary-button" type="submit">この条件で注文を考える <span>→</span></button>
+        <button class="primary-button" id="createOrderButton" type="submit" disabled>この条件で注文を考える <span>→</span></button>
       </form>
 
       <section id="result" class="result-section" aria-live="polite">
@@ -95,6 +100,21 @@
         <button class="icon-button" value="cancel" aria-label="閉じる">×</button>
       </form>
       <div class="dialog-content">
+        <section class="data-section cloud-read-section">
+          <h3>クラウド接続（確認用）</h3>
+          <p>焼酎キープ管理と同じ利用者でログインし、日高のデータを読み取れるかだけ確認します。現在の保存先は端末内のままです。</p>
+          <div class="cloud-status-card">
+            <strong id="cloudAuthSummary">接続状態を確認しています</strong>
+            <span id="cloudDataCounts">まだクラウドデータを読み取っていません。</span>
+          </div>
+          <div class="cloud-actions">
+            <button type="button" class="secondary-button" id="cloudLoginButton" disabled>クラウドへログイン</button>
+            <button type="button" class="secondary-button" id="cloudVerifyButton" hidden>もう一度読み取り確認</button>
+            <button type="button" class="text-button" id="cloudLogoutButton" hidden>ログアウト</button>
+          </div>
+          <p class="cloud-action-status" id="cloudActionStatus" aria-live="polite"></p>
+        </section>
+
         <section class="data-section">
           <h3>端末データの完全バックアップ</h3>
           <p>メニュー・初期メニュー・注文履歴・設定・当日の品切れ・未記録注文を、1つのJSONファイルに保存します。</p>
@@ -153,6 +173,7 @@
           <span>店舗 <strong id="storeInfo"></strong></span>
           <span>アプリ版 <strong id="appVersion"></strong></span>
           <span>メニューデータ <strong id="menuDataVersion"></strong></span>
+          <span>クラウド準備 <strong id="supabaseStatus">未確認（保存は端末）</strong></span>
         </footer>
       </div>
     </dialog>
@@ -311,6 +332,28 @@
       </form>
     </dialog>
 
+    <dialog id="cloudLoginDialog" class="item-dialog cloud-login-dialog">
+      <form id="cloudLoginForm">
+        <div>
+          <p class="eyebrow">読取確認だけ行います</p>
+          <h2>クラウドへログイン</h2>
+        </div>
+        <p class="dialog-note"><strong>1.</strong> 焼酎キープ管理で使用しているものと同じメールアドレスへ、ログイン用メールを送ります。</p>
+        <label>メールアドレス<input id="cloudEmail" type="email" inputmode="email" autocomplete="email" required /></label>
+        <button class="primary-button" id="submitCloudLogin" type="submit">ログイン用メールを送る</button>
+        <div class="cloud-link-paste">
+          <p class="dialog-note"><strong>2.</strong> 届いたメールのボタンを開かず、右クリックまたは長押しでリンクをコピーして貼り付けます。</p>
+          <label>メールのログインリンク<textarea id="cloudMagicLink" rows="3" autocomplete="off" spellcheck="false" placeholder="https://…/auth/v1/verify?token=…"></textarea></label>
+          <button class="secondary-button" id="verifyCloudMagicLink" type="button">貼り付けたリンクでログイン</button>
+          <p class="field-help">リンクはSupabaseの認証にだけ使用し、端末には保存しません。</p>
+        </div>
+        <p class="dialog-note">新しい利用者は作成しません。ログイン後もメニューや履歴は端末内へ保存されます。</p>
+        <p id="cloudLoginStatus" class="cloud-login-status" aria-live="polite"></p>
+        <button type="button" class="secondary-button" id="cancelCloudLogin">閉じる</button>
+      </form>
+    </dialog>
+
+    <script src="supabase-connection.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

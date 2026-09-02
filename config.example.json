@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "mode": "connection-check-only",
+  "supabaseUrl": "https://your-project-ref.supabase.co",
+  "publishableKey": "sb_publishable_your_key",
+  "appKey": "hidaka-order",
+  "legacyStoreId": "hidaka-001",
+  "supabaseStoreId": "00000000-0000-0000-0000-000000000000"
+}

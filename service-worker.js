@@ -1,8 +1,9 @@
-const CACHE_NAME = 'hidaka-order-pwa-v20';
+const CACHE_NAME = 'hidaka-order-pwa-v28';
 const APP_ASSETS = [
   './',
   './index.html',
   './styles.css',
+  './supabase-connection.js',
   './app.js',
   './data/stores.json',
   './data/hidaka-menu.csv',
@@ -24,7 +25,12 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
+  const requestUrl = new URL(event.request.url);
+  if (event.request.method !== 'GET' || requestUrl.origin !== self.location.origin) return;
+  if (requestUrl.pathname.endsWith('/config.local.json')) {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }));
+    return;
+  }
 
   event.respondWith(
     fetch(event.request)

@@ -6,7 +6,7 @@ const appPath = new URL('../app.js', import.meta.url);
 const source = readFileSync(appPath, 'utf8');
 const instrumented = source.replace(
   /\n\s*boot\(\);\s*\n\}\)\(\);\s*$/,
-  '\n  globalThis.__hidakaTest = { replaceOutOfStockItems, replaceOrderItemManually, regenerateOrderKeepingManualItems, normalizePendingOrder, normalizeHistoryItem, normalizeVisitContext, normalizeFeedback, hasFeedback, feedbackSummary, createVisitContext, createHistoryRecord, normalizeStore, normalizeStores, normalizeMenuItem, normalizeDefaultMenuRows, compareMenuEditorItems, compareMenuEditorItemsByCategory, buildMenuCsv, mergeImportedData, createFullBackupPayload, normalizeFullBackup, setState: value => { state = value; }, getState: () => state };\n})();\n'
+  '\n  globalThis.__hidakaTest = { createOrder, getDishCandidates, normalizeHungerPreference, replaceOutOfStockItems, replaceOrderItemManually, regenerateOrderKeepingManualItems, normalizePendingOrder, normalizeHistoryItem, normalizeVisitContext, normalizeFeedback, hasFeedback, feedbackSummary, createVisitContext, createHistoryRecord, normalizeStore, normalizeStores, normalizeMenuItem, normalizeDefaultMenuRows, compareMenuEditorItems, compareMenuEditorItemsByCategory, buildMenuCsv, mergeImportedData, createFullBackupPayload, normalizeFullBackup, setState: value => { state = value; }, getState: () => state };\n})();\n'
 );
 assert.notEqual(instrumented, source, 'app.js のテスト準備に失敗しました。');
 
@@ -129,17 +129,18 @@ const hungerDishB = { id: 'hunger-b', name: '空腹度料理B', price: 300, cate
 const hungerDishC = { id: 'hunger-c', name: '空腹度料理C', price: 300, category: 'main', tags: ['魚介'], actual: true };
 const hungerDishCount = order => order.items.filter(item => ['small', 'main'].includes(item.category)).length;
 test.setState({ menu: [hungerDishA, hungerDishB, hungerDishC], history: [], outOfStock: { date: today, ids: [] } });
-const intuitiveLightOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none', skewerCount: 0, wantFinish: false });
-const intuitiveNormalOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'normal', drink: 'none', skewerCount: 0, wantFinish: false });
-const intuitiveHeartyOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'hearty', drink: 'none', skewerCount: 0, wantFinish: false });
+const intuitiveLightOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', selectedDishId: hungerDishA.id, drink: 'none', skewerCount: 0, wantFinish: false });
+const intuitiveNormalOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'normal', selectedDishId: hungerDishA.id, drink: 'none', skewerCount: 0, wantFinish: false });
 assert.equal(hungerDishCount(intuitiveLightOrder), 1);
 assert.equal(hungerDishCount(intuitiveNormalOrder), 2);
-assert.equal(hungerDishCount(intuitiveHeartyOrder), 3);
-assert.match(intuitiveLightOrder.items.find(item => ['small', 'main'].includes(item.category)).recommendationReason, /串以外 1品/);
-assert.match(intuitiveNormalOrder.items.find(item => ['small', 'main'].includes(item.category)).recommendationReason, /串以外 2品/);
-assert.match(intuitiveHeartyOrder.items.find(item => ['small', 'main'].includes(item.category)).recommendationReason, /串以外 3品/);
+assert.equal(intuitiveLightOrder.items.find(item => item.id === hungerDishA.id).userSelectedCandidate, true);
+assert.match(intuitiveLightOrder.items.find(item => item.id === hungerDishA.id).recommendationReason, /候補から選択/);
+assert.equal(intuitiveNormalOrder.items.find(item => item.id === hungerDishA.id).userSelectedCandidate, true);
+assert.match(intuitiveNormalOrder.items.find(item => ['small', 'main'].includes(item.category) && item.id !== hungerDishA.id).recommendationReason, /串以外 2品/);
+assert.equal(test.normalizeHungerPreference('hearty'), 'normal');
+assert.deepEqual(Array.from(test.getDishCandidates('normal'), item => item.id).sort(), [hungerDishA.id, hungerDishB.id].sort());
 test.setState({ menu: [hungerDishA], history: [], outOfStock: { date: today, ids: [] } });
-const lightStillAllowsMeat = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none', skewerCount: 0, wantFinish: false });
+const lightStillAllowsMeat = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', selectedDishId: hungerDishA.id, drink: 'none', skewerCount: 0, wantFinish: false });
 assert.equal(lightStillAllowsMeat.items.some(item => item.id === hungerDishA.id), true);
 
 const pausedDrink = { ...drink, id: 'paused-drink', name: '休止中の飲み物', available: false };

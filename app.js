@@ -6,7 +6,7 @@
   const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
   const DATA_SCHEMA_VERSION = 6;
-  const APP_VERSION = '1.9.0';
+  const APP_VERSION = '1.14.0';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-31-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-01';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
@@ -29,8 +29,9 @@
   const FOOD_MOOD_TAGS = new Set(['pork', 'chicken', 'beef', 'seafood', 'vegetable', 'spicy']);
   const KEEP_SHOCHU_FEE = { id: 'keep-shochu-fee', storeId: DEFAULT_STORE_ID, name: '割代（焼酎キープ）', price: 220, category: 'fee', tags: [], actual: true };
   const ORDER_BUDGET = 3000;
-  const HUNGER_LABEL = { light: '軽め', normal: '普通', hearty: 'がっつり' };
-  const HUNGER_DISH_COUNT = { light: 1, normal: 2, hearty: 3 };
+  const HUNGER_LABEL = { light: '軽め', normal: '普通' };
+  const HUNGER_DISH_COUNT = { light: 1, normal: 2 };
+  const DISH_CANDIDATE_COUNT = 5;
   const PENDING_REMINDER_MS = 10 * 60 * 1000;
   const fallbackMenu = [
     { id: 'highball', name: 'ハイボール', price: 380, category: 'drink', tags: ['drink', 'light'], actual: false },
@@ -67,11 +68,12 @@
 
   function cloneMenu(menu) { return menu.map(item => ({ ...item, tags: [...item.tags] })); }
   function cloneStores(stores) { return stores.map(store => ({ ...store })); }
+  function normalizeHungerPreference(value) { return value === 'light' ? 'light' : 'normal'; }
   function defaultState() {
     const stores = cloneStores(defaultStores);
     const activeStoreId = stores.some(store => store.id === DEFAULT_STORE_ID) ? DEFAULT_STORE_ID : stores[0].id;
     const menu = defaultMenu.map(item => ({ ...item, storeId: item.storeId || activeStoreId, tags: item.tags.map(localizeTag) }));
-    return { dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', skewerCount: 3, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, menuSortMode: 'tag', outOfStock: { date: todayKey(), ids: [] }, pendingOrder: null };
+    return { dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', selectedDishId: '', skewerCount: 3, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, menuSortMode: 'tag', outOfStock: { date: todayKey(), ids: [] }, pendingOrder: null };
   }
   let state;
   let currentOrder = null;
@@ -96,7 +98,10 @@
       const menu = shouldInstallNewBaseMenu ? cloneMenu(base.menu) : saved.menu.map(normalizeMenuItem).filter(Boolean);
       const initialMenu = shouldInstallNewBaseMenu ? cloneMenu(base.initialMenu) : (Array.isArray(saved.initialMenu) ? saved.initialMenu.map(normalizeMenuItem).filter(Boolean) : cloneMenu(menu));
       const menuSortMode = ['tag', 'category'].includes(saved.menuSortMode) ? saved.menuSortMode : base.menuSortMode;
-      return { ...base, ...saved, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, preferences: { ...base.preferences, ...(saved.preferences || {}), avoidRecent: true }, menuSortMode, outOfStock, menu, initialMenu, history: saved.history.map(entry => normalizeHistoryItem(entry, menu)).filter(Boolean), pendingOrder: normalizePendingOrder(saved.pendingOrder) };
+      const preferences = { ...base.preferences, ...(saved.preferences || {}), avoidRecent: true };
+      preferences.hunger = normalizeHungerPreference(preferences.hunger);
+      preferences.selectedDishId = String(preferences.selectedDishId || '');
+      return { ...base, ...saved, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, preferences, menuSortMode, outOfStock, menu, initialMenu, history: saved.history.map(entry => normalizeHistoryItem(entry, menu)).filter(Boolean), pendingOrder: normalizePendingOrder(saved.pendingOrder) };
     } catch { return defaultState(); }
   }
 
@@ -398,6 +403,7 @@
         ...normalized,
         ...(item.manuallyAdded ? { manuallyAdded: true } : {}),
         ...(item.manuallyChanged ? { manuallyChanged: true } : {}),
+        ...(item.userSelectedCandidate ? { userSelectedCandidate: true } : {}),
         ...(normalizeSuggestedItem(item.changedFrom) ? { changedFrom: normalizeSuggestedItem(item.changedFrom) } : {}),
         ...(item.changeReason ? { changeReason: String(item.changeReason) } : {}),
         ...(item.recommendationReason ? { recommendationReason: String(item.recommendationReason) } : {})
@@ -406,6 +412,8 @@
     if (!items.length) return null;
     const basePreferences = defaultState().preferences;
     const preferences = { ...basePreferences, ...(raw.order.preferences || {}), budget: ORDER_BUDGET, avoidRecent: true };
+    preferences.hunger = normalizeHungerPreference(preferences.hunger);
+    preferences.selectedDishId = String(preferences.selectedDishId || '');
     preferences.moods = Array.isArray(preferences.moods) ? preferences.moods.map(String) : [];
     preferences.skewerCount = Math.max(0, Math.round(Number(preferences.skewerCount) || 0));
     const savedAtValue = String(raw.savedAt || '');
@@ -438,12 +446,36 @@
     renderMoodChoices();
     applyPreferences();
     saveState();
-    $('#preferenceForm').addEventListener('submit', event => { event.preventDefault(); currentOrder = createOrder(readPreferences()); renderOrder(currentOrder, 'new'); });
+    $('#preferenceForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const preferences = readPreferences();
+      if (!preferences.selectedDishId) {
+        updateDishCandidateStatus();
+        $('input[name="selectedDish"]')?.focus();
+        return;
+      }
+      currentOrder = createOrder(preferences);
+      renderOrder(currentOrder, 'new');
+    });
+    $$('input[name="hunger"]').forEach(input => input.addEventListener('change', () => {
+      if (!input.checked) return;
+      state.preferences.hunger = normalizeHungerPreference(input.value);
+      state.preferences.selectedDishId = '';
+      saveState();
+      renderDishCandidates();
+    }));
     $('#skewerCount').addEventListener('input', syncSkewerCount);
     $('#mustShishito').addEventListener('change', () => {
       if ($('#mustShishito').checked && Number($('#skewerCount').value) === 0) $('#skewerCount').value = 1;
       syncSkewerCount();
     });
+    window.addEventListener('hidaka:supabase-status', event => renderSupabaseStatus(event.detail));
+    $('#cloudLoginButton').addEventListener('click', openCloudLoginDialog);
+    $('#cloudLoginForm').addEventListener('submit', submitCloudLogin);
+    $('#verifyCloudMagicLink').addEventListener('click', verifyCloudMagicLink);
+    $('#cancelCloudLogin').addEventListener('click', () => $('#cloudLoginDialog').close());
+    $('#cloudVerifyButton').addEventListener('click', verifyCloudRead);
+    $('#cloudLogoutButton').addEventListener('click', logoutCloud);
     $('#dataButton').addEventListener('click', openDataDialog);
     $$('input[name="menuSortMode"]').forEach(input => input.addEventListener('change', () => {
       if (!input.checked) return;
@@ -481,12 +513,14 @@
     p.budget = ORDER_BUDGET;
     $('#skewerCount').value = p.skewerCount;
     syncSkewerCount();
+    p.hunger = normalizeHungerPreference(p.hunger);
     $(`input[name="hunger"][value="${p.hunger}"]`).checked = true;
     p.drink = renderDrinkOptions(p.drink);
     $$('input[name="mood"]').forEach(input => { input.checked = p.moods.includes(input.value); });
     $('#mustShishito').checked = p.mustShishito;
     $('#wantFinish').checked = p.wantFinish;
     p.avoidRecent = true;
+    renderDishCandidates();
   }
 
   function renderMoodChoices() {
@@ -515,13 +549,112 @@
 
   function readPreferences() {
     const preferences = {
-      budget: ORDER_BUDGET, hunger: $('input[name="hunger"]:checked').value, skewerCount: Number($('#skewerCount').value), drink: $('#drink').value,
+      budget: ORDER_BUDGET, hunger: normalizeHungerPreference($('input[name="hunger"]:checked')?.value), selectedDishId: $('input[name="selectedDish"]:checked')?.value || '', skewerCount: Number($('#skewerCount').value), drink: $('#drink').value,
       moods: $$('input[name="mood"]:checked').map(input => input.value), mustShishito: $('#mustShishito').checked,
       wantFinish: $('#wantFinish').checked, avoidRecent: true
     };
     state.preferences = preferences;
     saveState();
     return preferences;
+  }
+
+  function stableCandidateJitter(item, hunger) {
+    const seed = `${todayKey()}|${hunger}|${item.id}|${item.name}`;
+    let hash = 2166136261;
+    for (let index = 0; index < seed.length; index += 1) {
+      hash ^= seed.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0) / 4294967295;
+  }
+
+  function getDishCandidates(hunger = 'normal', selectedDishId = '', excludedIds = getTodayOutOfStockIds()) {
+    const normalizedHunger = normalizeHungerPreference(hunger);
+    const excluded = new Set(excludedIds.map(String));
+    const recent = recentOrderStats();
+    const options = state.menu.filter(item =>
+      isMenuAvailable(item) &&
+      item.category === 'small' &&
+      !excluded.has(String(item.id))
+    );
+    const score = item => {
+      let value = stableCandidateJitter(item, normalizedHunger) * 1.2;
+      if (normalizedHunger === 'light' && item.category === 'small') value += 1.2;
+      if (normalizedHunger === 'light' && hasTag(item, 'light')) value += 0.8;
+      if (normalizedHunger === 'normal' && item.category === 'main') value += 0.5;
+      if (item.offeringType === 'seasonal') value += 1.5;
+      if (item.offeringType === 'limited') value += 1.1;
+      value -= recent.penalty(item);
+      return value;
+    };
+    const sorted = options.sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name, 'ja'));
+    const candidates = sorted.slice(0, DISH_CANDIDATE_COUNT);
+    const selected = sorted.find(item => String(item.id) === String(selectedDishId));
+    if (selected && !candidates.some(item => item.id === selected.id)) {
+      if (candidates.length >= DISH_CANDIDATE_COUNT) candidates[candidates.length - 1] = selected;
+      else candidates.push(selected);
+    }
+    return candidates;
+  }
+
+  function updateDishCandidateStatus() {
+    const selected = $('input[name="selectedDish"]:checked');
+    const status = $('#dishCandidateStatus');
+    const button = $('#createOrderButton');
+    const hasCandidates = Boolean($('input[name="selectedDish"]'));
+    button.disabled = !selected;
+    status.classList.toggle('is-selected', Boolean(selected));
+    status.textContent = selected
+      ? `「${selected.dataset.itemName}」を注文案に固定します。`
+      : (hasCandidates ? '候補から1品選ぶと、注文を考えられます。' : '選べる串以外の料理がありません。メニューの提供状態を確認してください。');
+  }
+
+  function renderDishCandidates() {
+    const hunger = normalizeHungerPreference($('input[name="hunger"]:checked')?.value || state.preferences.hunger);
+    const candidates = getDishCandidates(hunger, state.preferences.selectedDishId);
+    const selectedDishId = candidates.some(item => String(item.id) === String(state.preferences.selectedDishId)) ? String(state.preferences.selectedDishId) : '';
+    state.preferences.hunger = hunger;
+    state.preferences.selectedDishId = selectedDishId;
+    const container = $('#dishCandidates');
+    if (!candidates.length) {
+      const empty = document.createElement('p');
+      empty.className = 'dish-candidate-empty';
+      empty.textContent = '現在選べる串以外の料理がありません。';
+      container.replaceChildren(empty);
+      saveState();
+      updateDishCandidateStatus();
+      return;
+    }
+    container.replaceChildren(...candidates.map(item => {
+      const label = document.createElement('label');
+      label.className = 'dish-candidate-card';
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'selectedDish';
+      input.value = item.id;
+      input.dataset.itemName = item.name;
+      input.checked = String(item.id) === selectedDishId;
+      const body = document.createElement('span');
+      const name = document.createElement('strong');
+      name.textContent = item.name;
+      const detail = document.createElement('small');
+      const offeringLabel = OFFERING_TYPE_LABEL[item.offeringType];
+      detail.textContent = `${CATEGORY_LABEL[item.category]}${offeringLabel && item.offeringType !== 'regular' ? `・${offeringLabel}` : ''}`;
+      const price = document.createElement('b');
+      price.textContent = yen(item.price);
+      body.append(name, detail, price);
+      label.append(input, body);
+      input.addEventListener('change', () => {
+        if (!input.checked) return;
+        state.preferences.hunger = hunger;
+        state.preferences.selectedDishId = input.value;
+        saveState();
+        updateDishCandidateStatus();
+      });
+      return label;
+    }));
+    saveState();
+    updateDishCandidateStatus();
   }
 
   function syncSkewerCount() {
@@ -611,6 +744,7 @@
   }
 
   function createOrder(p, excludedIds = getTodayOutOfStockIds()) {
+    p = { ...p, hunger: normalizeHungerPreference(p.hunger), selectedDishId: String(p.selectedDishId || '') };
     const excluded = new Set(excludedIds);
     const selected = [];
     const add = (item, recommendationReason = '') => {
@@ -643,6 +777,7 @@
     };
 
     const unavailable = [];
+    const dishTarget = HUNGER_DISH_COUNT[p.hunger] || HUNGER_DISH_COUNT.normal;
     add(KEEP_SHOCHU_FEE, '焼酎キープの固定割代');
     if (p.drink !== 'none') {
       const selectedDrink = state.menu.find(item => item.id === p.drink && item.category === 'drink');
@@ -650,6 +785,13 @@
       else if (!isMenuAvailable(selectedDrink)) unavailable.push(`選択した飲み物「${selectedDrink.name}」は休止中または提供期間外のため、入れられませんでした。`);
       else if (excluded.has(selectedDrink.id)) unavailable.push(`選択した飲み物「${selectedDrink.name}」は品切れとして除外しました。`);
       else add(selectedDrink, '最初の飲み物として指定');
+    }
+    if (p.selectedDishId) {
+      const selectedDish = state.menu.find(item => String(item.id) === p.selectedDishId && item.category === 'small');
+      if (!selectedDish) unavailable.push('選択した料理がメニューに見つからないため、別の料理を選びました。');
+      else if (!isMenuAvailable(selectedDish)) unavailable.push(`選択した料理「${selectedDish.name}」は休止中または提供期間外のため、別の料理を選びました。`);
+      else if (excluded.has(String(selectedDish.id))) unavailable.push(`選択した料理「${selectedDish.name}」は品切れのため、別の料理を選びました。`);
+      else add({ ...selectedDish, userSelectedCandidate: true }, `空腹度「${HUNGER_LABEL[p.hunger]}」の候補から選択`);
     }
     if (p.mustShishito) {
       const registeredShishito = state.menu.find(item => item.name === 'ししとう串') || state.menu.find(item => /ししとう/.test(item.name) || hasTag(item, 'shishito'));
@@ -669,7 +811,6 @@
       add(finish, '「締めを入れる」の指定を優先');
     }
 
-    const dishTarget = HUNGER_DISH_COUNT[p.hunger] || HUNGER_DISH_COUNT.normal;
     const selectedDishCount = () => selected.filter(item => ['small', 'main'].includes(item.category)).length;
     while (selectedDishCount() < dishTarget) {
       let dishOptions = candidates(null).filter(item => ['small', 'main'].includes(item.category));
@@ -805,7 +946,7 @@
 
   function orderHeading(order) {
     const mood = order.preferences.moods.map(value => MOOD_LABEL[value] || TAG_LABEL[value] || value).join('・');
-    const base = mood ? `${mood}気分のおすすめ` : order.preferences.hunger === 'light' ? '軽く一杯のおすすめ' : order.preferences.hunger === 'hearty' ? 'しっかり満足するおすすめ' : 'バランスのよいおすすめ';
+    const base = mood ? `${mood}気分のおすすめ` : order.preferences.hunger === 'light' ? '軽く一杯のおすすめ' : 'バランスのよいおすすめ';
     return `${base}（串 ${order.preferences.skewerCount}本）`;
   }
 
@@ -881,14 +1022,15 @@
     const list = order.items.length ? order.items.map((item, index) => {
       const moodMatches = order.preferences.moods.filter(tag => hasTag(item, tag));
       const moodMark = moodMatches.length ? '<span class="mood-match">★ 気分に合う</span>' : '';
+      const selectedMark = item.userSelectedCandidate ? '<span class="candidate-selected-mark">選んだ1品</span>' : '';
       const reason = item.recommendationReason ? `<small class="recommendation-reason">理由: ${escapeHtml(item.recommendationReason)}</small>` : '';
       const stockControl = item.category === 'fee' ? '' : `<label class="out-of-stock"><input class="out-of-stock-check" type="checkbox" data-item-id="${escapeHtml(item.id)}" /> 品切れ</label>`;
       const changedMark = item.manuallyChanged ? '<span class="manual-change-mark">変更済み</span>' : '';
       const changeControl = item.category === 'fee' || item.manuallyAdded ? '' : `<button class="change-order-item" type="button" data-item-index="${index}">変更</button>`;
-      return `<li class="order-item"><span class="order-number">${index + 1}</span><div class="order-details"><strong>${escapeHtml(item.name)}${moodMark}${changedMark}</strong><small>${CATEGORY_LABEL[item.category]}</small>${reason}</div><div class="order-item-controls"><span class="order-price">${yen(item.price)}</span><div>${changeControl}${stockControl}</div></div></li>`;
+      return `<li class="order-item"><span class="order-number">${index + 1}</span><div class="order-details"><strong>${escapeHtml(item.name)}${moodMark}${selectedMark}${changedMark}</strong><small>${CATEGORY_LABEL[item.category]}</small>${reason}</div><div class="order-item-controls"><span class="order-price">${yen(item.price)}</span><div>${changeControl}${stockControl}</div></div></li>`;
     }).join('') : '<li class="order-item"><div class="order-details"><strong>この条件ではメニューを組めませんでした</strong><small>メニュー登録や品切れ状況を確認してください。</small></div></li>';
     const unavailable = order.unavailable.length ? `<p class="notice">${order.unavailable.map(escapeHtml).join('<br>')}</p>` : '';
-    $('#result').innerHTML = `<article class="result-card"><div class="result-top"><p>頼む順番まで、このままどうぞ</p><h2>${orderHeading(order)}</h2><div class="price-summary"><strong>${yen(order.total)}</strong><small>目安 ${yen(order.budget)}<br>${budgetStatus}${isEstimate ? '（価格は目安）' : ''}</small></div></div><ol class="order-list">${list}</ol>${unavailable}<div class="result-actions"><button class="secondary-button" type="button" id="regenerate">組み直す</button><button class="secondary-button" type="button" id="reconsiderOutOfStock" disabled>品切れを除いて組み直す</button><button class="secondary-button" type="button" id="addFromMenu">メニューから追加</button><button class="primary-button pending-record-button" type="button" id="recordOrder">この注文を記録</button></div></article>`;
+    $('#result').innerHTML = `<article class="result-card"><div class="result-top"><p>頼む順番まで、このままどうぞ</p><h2>${orderHeading(order)}</h2><div class="price-summary"><strong>${yen(order.total)}</strong><small>目安 ${yen(order.budget)}<br>${budgetStatus}${isEstimate ? '（価格は目安）' : ''}</small></div></div><ol class="order-list">${list}</ol>${unavailable}<div class="result-actions"><button class="secondary-button" type="button" id="regenerate">組み直す</button><button class="secondary-button" type="button" id="reconsiderOutOfStock" disabled>品切れを除いて組み直す</button><button class="secondary-button" type="button" id="addFromMenu">メニューから追加</button><button class="secondary-button start-over-button" type="button" id="startOver">条件をリセットして最初から</button><button class="primary-button pending-record-button" type="button" id="recordOrder">この注文を記録</button></div></article>`;
     const reconsiderButton = $('#reconsiderOutOfStock');
     const stockChecks = $$('.out-of-stock-check');
     stockChecks.forEach(check => check.addEventListener('change', () => { reconsiderButton.disabled = !stockChecks.some(input => input.checked); }));
@@ -901,7 +1043,21 @@
     });
     $('#regenerate').addEventListener('click', () => { currentOrder = regenerateOrderKeepingManualItems(currentOrder, readPreferences()); renderOrder(currentOrder); });
     $('#addFromMenu').addEventListener('click', openAddToOrderDialog);
+    $('#startOver').addEventListener('click', resetOrderPlanning);
     $('#recordOrder').addEventListener('click', recordCurrentOrder);
+  }
+
+  function resetOrderPlanning() {
+    clearPendingReminderTimer();
+    state.pendingOrder = null;
+    state.preferences = { ...defaultState().preferences, moods: [] };
+    currentOrder = null;
+    const pendingDialog = $('#pendingOrderDialog');
+    if (pendingDialog.open) pendingDialog.close();
+    saveState();
+    applyPreferences();
+    $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>空腹度を選び、まず1品を決めてください。</p></div>';
+    $('#preferenceForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function createHistoryRecord(order, date = todayKey(), pendingSavedAt = '') {
@@ -933,11 +1089,13 @@
     state.history.push(historyRecord);
     state.history = state.history.slice(-100);
     state.pendingOrder = null;
+    state.preferences.selectedDishId = '';
     saveState();
     clearPendingReminderTimer();
     const dialog = $('#pendingOrderDialog');
     if (dialog.open) dialog.close();
     renderHistorySummary();
+    renderDishCandidates();
     const button = $('#recordOrder');
     if (button) {
       button.textContent = '記録しました ✓';
@@ -1274,7 +1432,7 @@
     const index = state.menu.findIndex(menuItem => menuItem.id === item.id);
     if (index >= 0) state.menu[index] = item; else state.menu.push(item);
     state.preferences.drink = renderDrinkOptions(state.preferences.drink);
-    saveState(); renderMenuEditor(); renderMoodChoices(); $('#menuItemDialog').close();
+    saveState(); renderMenuEditor(); renderMoodChoices(); renderDishCandidates(); $('#menuItemDialog').close();
   }
   function toggleMenuAvailability(item) {
     const nextAvailable = !isMenuManuallyAvailable(item);
@@ -1282,7 +1440,7 @@
     if (!confirm(`「${item.name}」を${action}しますか？${nextAvailable ? '' : '\n休止中は注文候補に表示されません。'}`)) return;
     item.available = nextAvailable;
     state.preferences.drink = renderDrinkOptions(state.preferences.drink);
-    saveState(); renderMenuEditor(); renderMoodChoices();
+    saveState(); renderMenuEditor(); renderMoodChoices(); renderDishCandidates();
   }
 
   async function importFile(event) {
@@ -1295,7 +1453,7 @@
       const requestedTarget = $('#importTarget').value;
       const mode = $('input[name="importMode"]:checked').value;
       const result = mergeImportedData(data, requestedTarget, mode);
-      saveState(); renderMenuEditor(); renderDrinkOptions(); renderMoodChoices(); renderHistorySummary();
+      saveState(); renderMenuEditor(); renderDrinkOptions(); renderMoodChoices(); renderDishCandidates(); renderHistorySummary();
       status.textContent = `${result}を読み込みました。`;
     } catch (error) { status.textContent = `読み込めませんでした: ${error.message}`; }
     event.target.value = '';
@@ -1376,6 +1534,8 @@
     const history = saved.history.map(entry => normalizeHistoryItem(entry, menu)).filter(Boolean);
     if (menu.length !== saved.menu.length || initialMenu.length !== saved.initialMenu.length || history.length !== saved.history.length) throw new Error('壊れているメニューまたは注文履歴が含まれています');
     const preferences = { ...base.preferences, ...(saved.preferences || {}), budget: ORDER_BUDGET, avoidRecent: true };
+    preferences.hunger = normalizeHungerPreference(preferences.hunger);
+    preferences.selectedDishId = String(preferences.selectedDishId || '');
     preferences.moods = Array.isArray(preferences.moods) ? preferences.moods.map(String) : [];
     preferences.skewerCount = Math.max(0, Math.min(10, Math.round(Number(preferences.skewerCount) || 0)));
     const outOfStock = saved.outOfStock && typeof saved.outOfStock.date === 'string' && Array.isArray(saved.outOfStock.ids)
@@ -1483,6 +1643,166 @@
     $('#initialDataStatus').textContent = `${state.initialMenu.length}品を初期メニューとして登録しました。`;
   }
 
+  function renderSupabaseStatus(status) {
+    const statusElement = $('#supabaseStatus');
+    if (statusElement) {
+      statusElement.textContent = status?.label || '未確認（保存は端末）';
+      statusElement.dataset.state = status?.state || 'idle';
+      statusElement.title = status?.error || '現在の保存先は端末内です。';
+    }
+    renderCloudAuthStatus(status || {});
+  }
+
+  function renderCloudAuthStatus(status) {
+    const summary = $('#cloudAuthSummary');
+    const counts = $('#cloudDataCounts');
+    const loginButton = $('#cloudLoginButton');
+    const verifyButton = $('#cloudVerifyButton');
+    const logoutButton = $('#cloudLogoutButton');
+    if (!summary || !counts || !loginButton || !verifyButton || !logoutButton) return;
+
+    const isChecking = status.state === 'checking';
+    const isSignedIn = status.authenticated === true;
+    if (isChecking) {
+      summary.textContent = 'クラウドを確認しています';
+      counts.textContent = '完了までそのままお待ちください。';
+    } else if (isSignedIn && status.cloudCounts) {
+      summary.textContent = status.userEmail ? `ログイン済み：${status.userEmail}` : '同じ利用者としてログイン済み';
+      counts.textContent = `メニュー ${status.cloudCounts.menuItems}件・来店履歴 ${status.cloudCounts.visits}件・店舗設定 ${status.cloudCounts.storeSettings}件を読み取り確認しました。`;
+    } else if (isSignedIn) {
+      summary.textContent = status.userEmail ? `ログイン済み：${status.userEmail}` : 'ログイン済み・読み取りを再確認してください';
+      counts.textContent = status.error || 'クラウドデータを読み取れませんでした。';
+    } else if (status.state === 'link-sent') {
+      summary.textContent = 'ログイン用メールを送信しました';
+      counts.textContent = '届いたメールのリンクを押すと、日高オーダーへ戻って読み取り確認を行います。';
+    } else if (!status.configured) {
+      summary.textContent = 'この端末ではクラウド接続が未設定です';
+      counts.textContent = '端末内保存のまま利用できます。';
+    } else if (!status.reachable || status.state === 'error') {
+      summary.textContent = 'クラウドへ接続できませんでした';
+      counts.textContent = '端末内のメニューと履歴には影響ありません。';
+    } else {
+      summary.textContent = status.label?.startsWith('再ログイン') ? 'もう一度ログインしてください' : '接続済み・未ログイン';
+      counts.textContent = 'ログインすると、対象データの件数だけを確認します。';
+    }
+
+    loginButton.hidden = isSignedIn;
+    loginButton.disabled = isChecking || !status.configured || !status.reachable;
+    loginButton.textContent = status.state === 'link-sent' ? 'メールをもう一度送る' : 'クラウドへログイン';
+    verifyButton.hidden = !isSignedIn;
+    verifyButton.disabled = isChecking;
+    logoutButton.hidden = !isSignedIn;
+    logoutButton.disabled = isChecking;
+  }
+
+  function friendlyCloudError(error) {
+    const message = error instanceof Error ? error.message : String(error || '');
+    if (/email not confirmed/i.test(message)) return 'メールアドレスの確認がまだ完了していません。';
+    if (/otp_expired|token.*expired|expired.*token/i.test(message)) return 'ログインリンクの有効期限が切れています。もう一度メールを送ってください。';
+    if (/rate limit|too many requests/i.test(message)) return 'メールの送信回数が多いため、少し待ってからもう一度お試しください。';
+    if (/failed to fetch|networkerror/i.test(message)) return '通信できませんでした。接続を確認してもう一度お試しください。';
+    return message || 'クラウドを確認できませんでした。';
+  }
+
+  function setCloudLoginBusy(busy) {
+    $('#cloudEmail').disabled = busy;
+    $('#cloudMagicLink').disabled = busy;
+    $('#submitCloudLogin').disabled = busy;
+    $('#verifyCloudMagicLink').disabled = busy;
+    $('#cancelCloudLogin').disabled = busy;
+    $('#submitCloudLogin').textContent = busy ? '送信中…' : 'ログイン用メールを送る';
+  }
+
+  function setCloudLoginMessage(message, success = false) {
+    const statusElement = $('#cloudLoginStatus');
+    statusElement.textContent = message;
+    statusElement.classList.toggle('is-success', success);
+  }
+
+  function openCloudLoginDialog() {
+    const currentStatus = window.HidakaSupabase?.getStatus?.() || {};
+    if (!currentStatus.configured || !currentStatus.reachable) {
+      $('#cloudActionStatus').textContent = 'クラウド接続の確認が完了していません。';
+      return;
+    }
+    $('#cloudLoginForm').reset();
+    setCloudLoginMessage('');
+    setCloudLoginBusy(false);
+    $('#cloudLoginDialog').showModal();
+    $('#cloudEmail').focus();
+  }
+
+  async function submitCloudLogin(event) {
+    event.preventDefault();
+    if (!window.HidakaSupabase?.sendMagicLink) return;
+    const email = $('#cloudEmail').value;
+    setCloudLoginBusy(true);
+    setCloudLoginMessage('ログイン用メールを送信しています。');
+    try {
+      const nextStatus = await window.HidakaSupabase.sendMagicLink(email);
+      renderSupabaseStatus(nextStatus);
+      setCloudLoginMessage('メールを送信しました。届いたログインリンクをコピーして、下の欄へ貼り付けてください。', true);
+      $('#cloudActionStatus').textContent = 'ログイン用メールを送信しました。保存先は端末内のままです。';
+    } catch (error) {
+      setCloudLoginMessage(friendlyCloudError(error));
+    } finally {
+      setCloudLoginBusy(false);
+    }
+  }
+
+  async function verifyCloudMagicLink() {
+    if (!window.HidakaSupabase?.verifyMagicLink) return;
+    const magicLink = $('#cloudMagicLink').value.trim();
+    setCloudLoginBusy(true);
+    setCloudLoginMessage('リンクを確認して、日高のデータを読み取っています。');
+    try {
+      const nextStatus = await window.HidakaSupabase.verifyMagicLink(magicLink);
+      renderSupabaseStatus(nextStatus);
+      $('#cloudActionStatus').textContent = 'クラウドへログインし、日高のデータを読み取り確認しました。保存先は端末内のままです。';
+      $('#cloudLoginForm').reset();
+      $('#cloudLoginDialog').close();
+    } catch (error) {
+      setCloudLoginMessage(friendlyCloudError(error));
+    } finally {
+      $('#cloudMagicLink').value = '';
+      setCloudLoginBusy(false);
+    }
+  }
+
+  async function verifyCloudRead() {
+    if (!window.HidakaSupabase?.verifyRead) return;
+    $('#cloudActionStatus').textContent = 'クラウドデータを読み取り確認しています。';
+    try {
+      const nextStatus = await window.HidakaSupabase.verifyRead();
+      renderSupabaseStatus(nextStatus);
+      $('#cloudActionStatus').textContent = 'もう一度読み取り確認しました。保存先は端末内のままです。';
+    } catch (error) {
+      $('#cloudActionStatus').textContent = friendlyCloudError(error);
+      renderSupabaseStatus(window.HidakaSupabase.getStatus());
+    }
+  }
+
+  async function logoutCloud() {
+    if (!window.HidakaSupabase?.signOut) return;
+    $('#cloudActionStatus').textContent = 'ログアウトしています。';
+    try {
+      const nextStatus = await window.HidakaSupabase.signOut();
+      renderSupabaseStatus(nextStatus);
+      $('#cloudActionStatus').textContent = 'この端末のクラウドログインを解除しました。';
+    } catch (error) {
+      $('#cloudActionStatus').textContent = friendlyCloudError(error);
+    }
+  }
+
+  async function initializeSupabaseStatus() {
+    if (!window.HidakaSupabase?.initialize) {
+      renderSupabaseStatus({ state: 'not-configured', label: '未設定（保存は端末）' });
+      return;
+    }
+    renderSupabaseStatus({ state: 'checking', label: '確認中（保存は端末）' });
+    renderSupabaseStatus(await window.HidakaSupabase.initialize());
+  }
+
   let deferredInstallPrompt = null;
 
   function setupInstallPrompt() {
@@ -1530,6 +1850,7 @@
     activeDefaultMenuVersion = loadedDefault.version;
     state = loadState();
     init();
+    void initializeSupabaseStatus();
     setupInstallPrompt();
     registerServiceWorker();
   }

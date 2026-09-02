@@ -1,2 +1,13 @@
 # Local tool workspaces
 .codex-spreadsheet-temp/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+config.local.js
+config.local.json
+
+# Supabase local state and private import data
+supabase/.temp/
+supabase/private-import/
