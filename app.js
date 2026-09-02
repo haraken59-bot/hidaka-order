@@ -6,7 +6,7 @@
   const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
   const DATA_SCHEMA_VERSION = 6;
-  const APP_VERSION = '1.14.0';
+  const APP_VERSION = '1.15.1';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-31-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-01';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
@@ -31,7 +31,7 @@
   const ORDER_BUDGET = 3000;
   const HUNGER_LABEL = { light: '軽め', normal: '普通' };
   const HUNGER_DISH_COUNT = { light: 1, normal: 2 };
-  const DISH_CANDIDATE_COUNT = 5;
+  const FIXED_SKEWER_COUNT = 5;
   const PENDING_REMINDER_MS = 10 * 60 * 1000;
   const fallbackMenu = [
     { id: 'highball', name: 'ハイボール', price: 380, category: 'drink', tags: ['drink', 'light'], actual: false },
@@ -73,7 +73,7 @@
     const stores = cloneStores(defaultStores);
     const activeStoreId = stores.some(store => store.id === DEFAULT_STORE_ID) ? DEFAULT_STORE_ID : stores[0].id;
     const menu = defaultMenu.map(item => ({ ...item, storeId: item.storeId || activeStoreId, tags: item.tags.map(localizeTag) }));
-    return { dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', selectedDishId: '', skewerCount: 3, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, menuSortMode: 'tag', outOfStock: { date: todayKey(), ids: [] }, pendingOrder: null };
+    return { dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', selectedDishId: '', featuredDishId: '', featuredDishDate: '', includeFeaturedDish: false, skewerCount: FIXED_SKEWER_COUNT, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, menuSortMode: 'tag', outOfStock: { date: todayKey(), ids: [] }, pendingOrder: null };
   }
   let state;
   let currentOrder = null;
@@ -100,7 +100,13 @@
       const menuSortMode = ['tag', 'category'].includes(saved.menuSortMode) ? saved.menuSortMode : base.menuSortMode;
       const preferences = { ...base.preferences, ...(saved.preferences || {}), avoidRecent: true };
       preferences.hunger = normalizeHungerPreference(preferences.hunger);
-      preferences.selectedDishId = String(preferences.selectedDishId || '');
+      preferences.selectedDishId = '';
+      preferences.featuredDishId = String(preferences.featuredDishId || '');
+      preferences.featuredDishDate = String(preferences.featuredDishDate || '');
+      preferences.includeFeaturedDish = preferences.featuredDishDate === todayKey() && preferences.includeFeaturedDish === true;
+      preferences.skewerCount = FIXED_SKEWER_COUNT;
+      preferences.mustShishito = true;
+      preferences.wantFinish = false;
       return { ...base, ...saved, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, preferences, menuSortMode, outOfStock, menu, initialMenu, history: saved.history.map(entry => normalizeHistoryItem(entry, menu)).filter(Boolean), pendingOrder: normalizePendingOrder(saved.pendingOrder) };
     } catch { return defaultState(); }
   }
@@ -404,6 +410,7 @@
         ...(item.manuallyAdded ? { manuallyAdded: true } : {}),
         ...(item.manuallyChanged ? { manuallyChanged: true } : {}),
         ...(item.userSelectedCandidate ? { userSelectedCandidate: true } : {}),
+        ...(item.featuredDishCandidate ? { featuredDishCandidate: true } : {}),
         ...(normalizeSuggestedItem(item.changedFrom) ? { changedFrom: normalizeSuggestedItem(item.changedFrom) } : {}),
         ...(item.changeReason ? { changeReason: String(item.changeReason) } : {}),
         ...(item.recommendationReason ? { recommendationReason: String(item.recommendationReason) } : {})
@@ -414,6 +421,9 @@
     const preferences = { ...basePreferences, ...(raw.order.preferences || {}), budget: ORDER_BUDGET, avoidRecent: true };
     preferences.hunger = normalizeHungerPreference(preferences.hunger);
     preferences.selectedDishId = String(preferences.selectedDishId || '');
+    preferences.featuredDishId = String(preferences.featuredDishId || '');
+    preferences.featuredDishDate = String(preferences.featuredDishDate || '');
+    preferences.includeFeaturedDish = preferences.includeFeaturedDish === true;
     preferences.moods = Array.isArray(preferences.moods) ? preferences.moods.map(String) : [];
     preferences.skewerCount = Math.max(0, Math.round(Number(preferences.skewerCount) || 0));
     const savedAtValue = String(raw.savedAt || '');
@@ -449,25 +459,17 @@
     $('#preferenceForm').addEventListener('submit', event => {
       event.preventDefault();
       const preferences = readPreferences();
-      if (!preferences.selectedDishId) {
-        updateDishCandidateStatus();
-        $('input[name="selectedDish"]')?.focus();
-        return;
-      }
       currentOrder = createOrder(preferences);
       renderOrder(currentOrder, 'new');
     });
     $$('input[name="hunger"]').forEach(input => input.addEventListener('change', () => {
       if (!input.checked) return;
       state.preferences.hunger = normalizeHungerPreference(input.value);
-      state.preferences.selectedDishId = '';
       saveState();
-      renderDishCandidates();
     }));
-    $('#skewerCount').addEventListener('input', syncSkewerCount);
-    $('#mustShishito').addEventListener('change', () => {
-      if ($('#mustShishito').checked && Number($('#skewerCount').value) === 0) $('#skewerCount').value = 1;
-      syncSkewerCount();
+    $('#includeFeaturedDish').addEventListener('change', event => {
+      state.preferences.includeFeaturedDish = event.currentTarget.checked;
+      saveState();
     });
     window.addEventListener('hidaka:supabase-status', event => renderSupabaseStatus(event.detail));
     $('#cloudLoginButton').addEventListener('click', openCloudLoginDialog);
@@ -511,16 +513,16 @@
   function applyPreferences() {
     const p = state.preferences;
     p.budget = ORDER_BUDGET;
-    $('#skewerCount').value = p.skewerCount;
-    syncSkewerCount();
+    p.skewerCount = FIXED_SKEWER_COUNT;
+    p.mustShishito = true;
+    p.wantFinish = false;
+    p.selectedDishId = '';
     p.hunger = normalizeHungerPreference(p.hunger);
     $(`input[name="hunger"][value="${p.hunger}"]`).checked = true;
     p.drink = renderDrinkOptions(p.drink);
     $$('input[name="mood"]').forEach(input => { input.checked = p.moods.includes(input.value); });
-    $('#mustShishito').checked = p.mustShishito;
-    $('#wantFinish').checked = p.wantFinish;
     p.avoidRecent = true;
-    renderDishCandidates();
+    renderFeaturedDishCandidate();
   }
 
   function renderMoodChoices() {
@@ -548,18 +550,20 @@
   }
 
   function readPreferences() {
+    const featuredToggle = $('#includeFeaturedDish');
     const preferences = {
-      budget: ORDER_BUDGET, hunger: normalizeHungerPreference($('input[name="hunger"]:checked')?.value), selectedDishId: $('input[name="selectedDish"]:checked')?.value || '', skewerCount: Number($('#skewerCount').value), drink: $('#drink').value,
-      moods: $$('input[name="mood"]:checked').map(input => input.value), mustShishito: $('#mustShishito').checked,
-      wantFinish: $('#wantFinish').checked, avoidRecent: true
+      budget: ORDER_BUDGET, hunger: normalizeHungerPreference($('input[name="hunger"]:checked')?.value), selectedDishId: '',
+      featuredDishId: String(featuredToggle.dataset.itemId || ''), featuredDishDate: todayKey(), includeFeaturedDish: featuredToggle.checked,
+      skewerCount: FIXED_SKEWER_COUNT, drink: $('#drink').value, moods: $$('input[name="mood"]:checked').map(input => input.value),
+      mustShishito: true, wantFinish: false, avoidRecent: true
     };
     state.preferences = preferences;
     saveState();
     return preferences;
   }
 
-  function stableCandidateJitter(item, hunger) {
-    const seed = `${todayKey()}|${hunger}|${item.id}|${item.name}`;
+  function stableCandidateJitter(item, context = '') {
+    const seed = `${todayKey()}|${context}|${item.id}|${item.name}`;
     let hash = 2166136261;
     for (let index = 0; index < seed.length; index += 1) {
       hash ^= seed.charCodeAt(index);
@@ -568,99 +572,65 @@
     return (hash >>> 0) / 4294967295;
   }
 
-  function getDishCandidates(hunger = 'normal', selectedDishId = '', excludedIds = getTodayOutOfStockIds()) {
-    const normalizedHunger = normalizeHungerPreference(hunger);
+  function recentFeaturedDishNames(visitLimit = 3) {
+    const mainById = new Map(state.menu.filter(item => item.category === 'main').map(item => [String(item.id), item]));
+    const mainByName = new Map(state.menu.filter(item => item.category === 'main').map(item => [historyNameKey(item.name), item]));
+    const names = new Set();
+    sortedHistory().slice(0, visitLimit).forEach(entry => entry.items.forEach(line => {
+      const matched = mainById.get(String(line.menuId || '')) || mainByName.get(historyNameKey(line.name));
+      if (matched) names.add(historyNameKey(matched.name));
+    }));
+    return names;
+  }
+
+  function getFeaturedDishCandidate(preferredId = '', excludedIds = getTodayOutOfStockIds()) {
     const excluded = new Set(excludedIds.map(String));
     const recent = recentOrderStats();
     const options = state.menu.filter(item =>
       isMenuAvailable(item) &&
-      item.category === 'small' &&
+      item.category === 'main' &&
       !excluded.has(String(item.id))
     );
-    const score = item => {
-      let value = stableCandidateJitter(item, normalizedHunger) * 1.2;
-      if (normalizedHunger === 'light' && item.category === 'small') value += 1.2;
-      if (normalizedHunger === 'light' && hasTag(item, 'light')) value += 0.8;
-      if (normalizedHunger === 'normal' && item.category === 'main') value += 0.5;
-      if (item.offeringType === 'seasonal') value += 1.5;
-      if (item.offeringType === 'limited') value += 1.1;
-      value -= recent.penalty(item);
-      return value;
-    };
-    const sorted = options.sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name, 'ja'));
-    const candidates = sorted.slice(0, DISH_CANDIDATE_COUNT);
-    const selected = sorted.find(item => String(item.id) === String(selectedDishId));
-    if (selected && !candidates.some(item => item.id === selected.id)) {
-      if (candidates.length >= DISH_CANDIDATE_COUNT) candidates[candidates.length - 1] = selected;
-      else candidates.push(selected);
-    }
-    return candidates;
+    const preferred = state.preferences.featuredDishDate === todayKey()
+      ? options.find(item => String(item.id) === String(preferredId))
+      : null;
+    if (preferred) return preferred;
+    const recentNames = recentFeaturedDishNames(3);
+    const notRecentlyOrdered = options.filter(item => !recentNames.has(historyNameKey(item.name)));
+    const pool = notRecentlyOrdered.length ? notRecentlyOrdered : options;
+    return pool.sort((a, b) => {
+      const penaltyDifference = recent.penalty(a) - recent.penalty(b);
+      if (penaltyDifference) return penaltyDifference;
+      return stableCandidateJitter(b, 'featured-main') - stableCandidateJitter(a, 'featured-main') || a.name.localeCompare(b.name, 'ja');
+    })[0] || null;
   }
 
-  function updateDishCandidateStatus() {
-    const selected = $('input[name="selectedDish"]:checked');
-    const status = $('#dishCandidateStatus');
-    const button = $('#createOrderButton');
-    const hasCandidates = Boolean($('input[name="selectedDish"]'));
-    button.disabled = !selected;
-    status.classList.toggle('is-selected', Boolean(selected));
-    status.textContent = selected
-      ? `「${selected.dataset.itemName}」を注文案に固定します。`
-      : (hasCandidates ? '候補から1品選ぶと、注文を考えられます。' : '選べる串以外の料理がありません。メニューの提供状態を確認してください。');
-  }
-
-  function renderDishCandidates() {
-    const hunger = normalizeHungerPreference($('input[name="hunger"]:checked')?.value || state.preferences.hunger);
-    const candidates = getDishCandidates(hunger, state.preferences.selectedDishId);
-    const selectedDishId = candidates.some(item => String(item.id) === String(state.preferences.selectedDishId)) ? String(state.preferences.selectedDishId) : '';
-    state.preferences.hunger = hunger;
-    state.preferences.selectedDishId = selectedDishId;
-    const container = $('#dishCandidates');
-    if (!candidates.length) {
-      const empty = document.createElement('p');
-      empty.className = 'dish-candidate-empty';
-      empty.textContent = '現在選べる串以外の料理がありません。';
-      container.replaceChildren(empty);
+  function renderFeaturedDishCandidate() {
+    const container = $('#featuredDishCandidate');
+    const toggle = $('#includeFeaturedDish');
+    const candidate = getFeaturedDishCandidate(state.preferences.featuredDishId);
+    if (!candidate) {
+      state.preferences.featuredDishId = '';
+      state.preferences.featuredDishDate = '';
+      state.preferences.includeFeaturedDish = false;
+      toggle.dataset.itemId = '';
+      toggle.checked = false;
+      toggle.disabled = true;
+      container.innerHTML = '<p>現在選べる一品料理がありません。</p>';
       saveState();
-      updateDishCandidateStatus();
       return;
     }
-    container.replaceChildren(...candidates.map(item => {
-      const label = document.createElement('label');
-      label.className = 'dish-candidate-card';
-      const input = document.createElement('input');
-      input.type = 'radio';
-      input.name = 'selectedDish';
-      input.value = item.id;
-      input.dataset.itemName = item.name;
-      input.checked = String(item.id) === selectedDishId;
-      const body = document.createElement('span');
-      const name = document.createElement('strong');
-      name.textContent = item.name;
-      const detail = document.createElement('small');
-      const offeringLabel = OFFERING_TYPE_LABEL[item.offeringType];
-      detail.textContent = `${CATEGORY_LABEL[item.category]}${offeringLabel && item.offeringType !== 'regular' ? `・${offeringLabel}` : ''}`;
-      const price = document.createElement('b');
-      price.textContent = yen(item.price);
-      body.append(name, detail, price);
-      label.append(input, body);
-      input.addEventListener('change', () => {
-        if (!input.checked) return;
-        state.preferences.hunger = hunger;
-        state.preferences.selectedDishId = input.value;
-        saveState();
-        updateDishCandidateStatus();
-      });
-      return label;
-    }));
+    const sameCandidate = state.preferences.featuredDishDate === todayKey() && String(state.preferences.featuredDishId) === String(candidate.id);
+    state.preferences.featuredDishId = String(candidate.id);
+    state.preferences.featuredDishDate = todayKey();
+    state.preferences.includeFeaturedDish = sameCandidate && state.preferences.includeFeaturedDish === true;
+    toggle.dataset.itemId = String(candidate.id);
+    toggle.checked = state.preferences.includeFeaturedDish;
+    toggle.disabled = false;
+    const offeringLabel = OFFERING_TYPE_LABEL[candidate.offeringType];
+    const detail = `${CATEGORY_LABEL[candidate.category]}${offeringLabel && candidate.offeringType !== 'regular' ? `・${offeringLabel}` : ''}`;
+    container.innerHTML = `<div><strong>${escapeHtml(candidate.name)}</strong><small>${escapeHtml(detail)}</small></div><b>${yen(candidate.price)}</b>`;
     saveState();
-    updateDishCandidateStatus();
-  }
-
-  function syncSkewerCount() {
-    const count = Number($('#skewerCount').value);
-    if (count === 0) $('#mustShishito').checked = false;
-    $('#skewerCountOutput').value = `${count}本`;
   }
 
   function renderDrinkOptions(selectedValue) {
@@ -744,15 +714,26 @@
   }
 
   function createOrder(p, excludedIds = getTodayOutOfStockIds()) {
-    p = { ...p, hunger: normalizeHungerPreference(p.hunger), selectedDishId: String(p.selectedDishId || '') };
-    const excluded = new Set(excludedIds);
+    p = {
+      ...p,
+      hunger: normalizeHungerPreference(p.hunger),
+      selectedDishId: '',
+      featuredDishId: String(p.featuredDishId || ''),
+      featuredDishDate: String(p.featuredDishDate || todayKey()),
+      includeFeaturedDish: p.includeFeaturedDish === true,
+      skewerCount: FIXED_SKEWER_COUNT,
+      moods: Array.isArray(p.moods) ? p.moods : [],
+      mustShishito: true,
+      wantFinish: false
+    };
+    const excluded = new Set(excludedIds.map(String));
     const selected = [];
     const add = (item, recommendationReason = '') => {
-      if (item && isMenuAvailable(item) && !excluded.has(item.id) && !selected.some(choice => choice.name === item.name)) selected.push({ ...item, recommendationReason: appendOfferingReason(recommendationReason, item) });
+      if (item && isMenuAvailable(item) && !excluded.has(String(item.id)) && !selected.some(choice => choice.name === item.name)) selected.push({ ...item, recommendationReason: appendOfferingReason(recommendationReason, item) });
       return item;
     };
     const recent = recentOrderStats();
-    const candidates = (category) => state.menu.filter(item => isMenuAvailable(item) && (!category || item.category === category) && !excluded.has(item.id)).filter(item => !selected.some(choice => choice.name === item.name));
+    const candidates = (category) => state.menu.filter(item => isMenuAvailable(item) && (!category || item.category === category) && !excluded.has(String(item.id))).filter(item => !selected.some(choice => choice.name === item.name));
     const score = (item, kind) => {
       let value = Math.random() * 0.8;
       if (p.moods.some(tag => hasTag(item, tag))) value += 5;
@@ -762,7 +743,7 @@
     const reasonFor = (item, kind) => {
       if (!item) return '';
       const moodMatches = p.moods.filter(tag => hasTag(item, tag)).map(tag => MOOD_LABEL[tag] || TAG_LABEL[tag] || tag);
-      if (moodMatches.length) return `今日の気分「${moodMatches.join('・')}」に合うため`;
+      if (moodMatches.length) return `食べたいもの「${moodMatches.join('・')}」に合うため`;
       if (item.price >= p.budget * 0.3) return '高額品ですが、普段と違う一品を楽しむ変化枠として';
       if (recent.penalty(item) === 0 && state.history.length) return '最近の注文と重ならないため';
       if (kind === 'main') return '食事全体にボリュームを加えるため';
@@ -786,47 +767,40 @@
       else if (excluded.has(selectedDrink.id)) unavailable.push(`選択した飲み物「${selectedDrink.name}」は品切れとして除外しました。`);
       else add(selectedDrink, '最初の飲み物として指定');
     }
-    if (p.selectedDishId) {
-      const selectedDish = state.menu.find(item => String(item.id) === p.selectedDishId && item.category === 'small');
-      if (!selectedDish) unavailable.push('選択した料理がメニューに見つからないため、別の料理を選びました。');
-      else if (!isMenuAvailable(selectedDish)) unavailable.push(`選択した料理「${selectedDish.name}」は休止中または提供期間外のため、別の料理を選びました。`);
-      else if (excluded.has(String(selectedDish.id))) unavailable.push(`選択した料理「${selectedDish.name}」は品切れのため、別の料理を選びました。`);
-      else add({ ...selectedDish, userSelectedCandidate: true }, `空腹度「${HUNGER_LABEL[p.hunger]}」の候補から選択`);
-    }
-    if (p.mustShishito) {
-      const registeredShishito = state.menu.find(item => item.name === 'ししとう串') || state.menu.find(item => /ししとう/.test(item.name) || hasTag(item, 'shishito'));
-      if (!registeredShishito) unavailable.push('ししとうがメニューに登録されていないため、入れられませんでした。');
-      else if (!isMenuAvailable(registeredShishito)) unavailable.push('ししとうは休止中または提供期間外のため、入れられませんでした。');
-      else if (excluded.has(registeredShishito.id)) unavailable.push('ししとうは品切れとして除外しました。');
-      else add(registeredShishito, '必須指定された串');
-    }
+    const registeredShishito = state.menu.find(item => item.name === 'ししとう串') || state.menu.find(item => item.category === 'skewer' && (/ししとう/.test(item.name) || hasTag(item, 'shishito')));
+    if (!registeredShishito) unavailable.push('固定ルールのししとうがメニューに登録されていないため、入れられませんでした。');
+    else if (!isMenuAvailable(registeredShishito)) unavailable.push('固定ルールのししとうは休止中または提供期間外のため、入れられませんでした。');
+    else if (excluded.has(String(registeredShishito.id))) unavailable.push('固定ルールのししとうは品切れとして除外しました。');
+    else add(registeredShishito, '串5本の固定ルールで必ず入れる1本');
 
     while (selected.filter(item => item.category === 'skewer').length < p.skewerCount) {
       const skewer = choose('skewer', 'skewer');
       if (!skewer) break;
-      add(skewer, `指定された串 ${p.skewerCount}本を優先`);
-    }
-    if (p.wantFinish) {
-      const finish = choose('finish', 'finish');
-      add(finish, '「締めを入れる」の指定を優先');
+      add(skewer, `固定ルールの串 ${p.skewerCount}本を構成するため`);
     }
 
-    const selectedDishCount = () => selected.filter(item => ['small', 'main'].includes(item.category)).length;
+    const selectedDishCount = () => selected.filter(item => item.category === 'small').length;
     while (selectedDishCount() < dishTarget) {
-      let dishOptions = candidates(null).filter(item => ['small', 'main'].includes(item.category));
+      let dishOptions = candidates('small');
       dishOptions = recent.preferNotLatest(dishOptions);
       const dish = dishOptions.sort((a, b) => score(b, 'dish') - score(a, 'dish'))[0];
       if (!dish) break;
       const baseReason = reasonFor(dish, 'dish');
-      add(dish, `${baseReason}／空腹度「${HUNGER_LABEL[p.hunger] || HUNGER_LABEL.normal}」に合わせた串以外 ${dishTarget}品のうちの1品`);
+      add(dish, `${baseReason}／つまみの量「${HUNGER_LABEL[p.hunger] || HUNGER_LABEL.normal}」に合わせたつまみ・小鉢 ${dishTarget}品のうちの1品`);
+    }
+    if (p.includeFeaturedDish) {
+      const featuredDish = state.menu.find(item => String(item.id) === p.featuredDishId && item.category === 'main');
+      if (!featuredDish) unavailable.push('今日の一品候補がメニューに見つからないため、入れられませんでした。');
+      else if (!isMenuAvailable(featuredDish)) unavailable.push(`今日の一品候補「${featuredDish.name}」は休止中または提供期間外のため、入れられませんでした。`);
+      else if (excluded.has(String(featuredDish.id))) unavailable.push(`今日の一品候補「${featuredDish.name}」は品切れのため、入れられませんでした。`);
+      else add({ ...featuredDish, featuredDishCandidate: true }, '今日の一品候補で「注文に入れる」を選択');
     }
     selected.sort((a, b) => ({ drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 }[a.category] - { drink: 1, small: 2, skewer: 3, main: 4, finish: 5, dessert: 6, fee: 7 }[b.category]));
     const total = selected.reduce((sum, item) => sum + item.price, 0);
     const actualSkewerCount = selected.filter(item => item.category === 'skewer').length;
     const actualDishCount = selectedDishCount();
     if (actualSkewerCount < p.skewerCount) unavailable.push(`利用可能な串が不足しているため、希望の ${p.skewerCount}本に届かず ${actualSkewerCount}本までとなりました。`);
-    if (actualDishCount < dishTarget) unavailable.push(`利用可能な串以外の料理が不足しているため、希望の ${dishTarget}品に届かず ${actualDishCount}品までとなりました。`);
-    if (p.wantFinish && !selected.some(item => item.category === 'finish')) unavailable.push('締めの候補が登録されていないか品切れのため、入れられませんでした。');
+    if (actualDishCount < dishTarget) unavailable.push(`利用可能なつまみ・小鉢が不足しているため、希望の ${dishTarget}品に届かず ${actualDishCount}品までとなりました。`);
     const budgetMessage = budgetGuidance(selected, p.budget);
     if (budgetMessage) unavailable.unshift(budgetMessage);
     const excludedNames = state.menu.filter(item => excluded.has(item.id)).map(item => item.name);
@@ -887,7 +861,8 @@
       const retainedManualState = item.manuallyAdded
         ? { manuallyAdded: true }
         : (item.manuallyChanged ? { manuallyChanged: true, changedFrom: item.changedFrom, changeReason: item.changeReason || '' } : {});
-      items.push({ ...replacement, ...retainedManualState, recommendationReason: appendOfferingReason(`品切れの「${item.name}」と同じ分類から代替`, replacement) });
+      const retainedCandidateState = item.featuredDishCandidate ? { featuredDishCandidate: true } : {};
+      items.push({ ...replacement, ...retainedManualState, ...retainedCandidateState, recommendationReason: appendOfferingReason(`品切れの「${item.name}」と同じ分類から代替`, replacement) });
       usedIds.add(String(replacement.id));
       usedNames.add(replacement.name);
       runningTotal += replacement.price;
@@ -946,7 +921,7 @@
 
   function orderHeading(order) {
     const mood = order.preferences.moods.map(value => MOOD_LABEL[value] || TAG_LABEL[value] || value).join('・');
-    const base = mood ? `${mood}気分のおすすめ` : order.preferences.hunger === 'light' ? '軽く一杯のおすすめ' : 'バランスのよいおすすめ';
+    const base = mood ? `${mood}を優先したおすすめ` : order.preferences.hunger === 'light' ? 'つまみ軽めのおすすめ' : order.preferences.hunger === 'hearty' ? 'つまみ多めのおすすめ' : 'バランスのよいおすすめ';
     return `${base}（串 ${order.preferences.skewerCount}本）`;
   }
 
@@ -1021,8 +996,8 @@
     const budgetStatus = budgetDifference > 0 ? `目安超過 ${yen(budgetDifference)}` : `目安まで ${yen(-budgetDifference)}`;
     const list = order.items.length ? order.items.map((item, index) => {
       const moodMatches = order.preferences.moods.filter(tag => hasTag(item, tag));
-      const moodMark = moodMatches.length ? '<span class="mood-match">★ 気分に合う</span>' : '';
-      const selectedMark = item.userSelectedCandidate ? '<span class="candidate-selected-mark">選んだ1品</span>' : '';
+      const moodMark = moodMatches.length ? '<span class="mood-match">★ 希望に合う</span>' : '';
+      const selectedMark = item.featuredDishCandidate ? '<span class="candidate-selected-mark">今日の一品</span>' : (item.userSelectedCandidate ? '<span class="candidate-selected-mark">選んだ1品</span>' : '');
       const reason = item.recommendationReason ? `<small class="recommendation-reason">理由: ${escapeHtml(item.recommendationReason)}</small>` : '';
       const stockControl = item.category === 'fee' ? '' : `<label class="out-of-stock"><input class="out-of-stock-check" type="checkbox" data-item-id="${escapeHtml(item.id)}" /> 品切れ</label>`;
       const changedMark = item.manuallyChanged ? '<span class="manual-change-mark">変更済み</span>' : '';
@@ -1056,7 +1031,7 @@
     if (pendingDialog.open) pendingDialog.close();
     saveState();
     applyPreferences();
-    $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>空腹度を選び、まず1品を決めてください。</p></div>';
+    $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>つまみの量と食べたいものから、バランスよく選びます。</p></div>';
     $('#preferenceForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -1090,12 +1065,13 @@
     state.history = state.history.slice(-100);
     state.pendingOrder = null;
     state.preferences.selectedDishId = '';
+    state.preferences.includeFeaturedDish = false;
     saveState();
     clearPendingReminderTimer();
     const dialog = $('#pendingOrderDialog');
     if (dialog.open) dialog.close();
     renderHistorySummary();
-    renderDishCandidates();
+    renderFeaturedDishCandidate();
     const button = $('#recordOrder');
     if (button) {
       button.textContent = '記録しました ✓';
@@ -1432,7 +1408,7 @@
     const index = state.menu.findIndex(menuItem => menuItem.id === item.id);
     if (index >= 0) state.menu[index] = item; else state.menu.push(item);
     state.preferences.drink = renderDrinkOptions(state.preferences.drink);
-    saveState(); renderMenuEditor(); renderMoodChoices(); renderDishCandidates(); $('#menuItemDialog').close();
+    saveState(); renderMenuEditor(); renderMoodChoices(); renderFeaturedDishCandidate(); $('#menuItemDialog').close();
   }
   function toggleMenuAvailability(item) {
     const nextAvailable = !isMenuManuallyAvailable(item);
@@ -1440,7 +1416,7 @@
     if (!confirm(`「${item.name}」を${action}しますか？${nextAvailable ? '' : '\n休止中は注文候補に表示されません。'}`)) return;
     item.available = nextAvailable;
     state.preferences.drink = renderDrinkOptions(state.preferences.drink);
-    saveState(); renderMenuEditor(); renderMoodChoices(); renderDishCandidates();
+    saveState(); renderMenuEditor(); renderMoodChoices(); renderFeaturedDishCandidate();
   }
 
   async function importFile(event) {
@@ -1453,7 +1429,7 @@
       const requestedTarget = $('#importTarget').value;
       const mode = $('input[name="importMode"]:checked').value;
       const result = mergeImportedData(data, requestedTarget, mode);
-      saveState(); renderMenuEditor(); renderDrinkOptions(); renderMoodChoices(); renderDishCandidates(); renderHistorySummary();
+      saveState(); renderMenuEditor(); renderDrinkOptions(); renderMoodChoices(); renderFeaturedDishCandidate(); renderHistorySummary();
       status.textContent = `${result}を読み込みました。`;
     } catch (error) { status.textContent = `読み込めませんでした: ${error.message}`; }
     event.target.value = '';
@@ -1535,9 +1511,14 @@
     if (menu.length !== saved.menu.length || initialMenu.length !== saved.initialMenu.length || history.length !== saved.history.length) throw new Error('壊れているメニューまたは注文履歴が含まれています');
     const preferences = { ...base.preferences, ...(saved.preferences || {}), budget: ORDER_BUDGET, avoidRecent: true };
     preferences.hunger = normalizeHungerPreference(preferences.hunger);
-    preferences.selectedDishId = String(preferences.selectedDishId || '');
+    preferences.selectedDishId = '';
+    preferences.featuredDishId = String(preferences.featuredDishId || '');
+    preferences.featuredDishDate = String(preferences.featuredDishDate || '');
+    preferences.includeFeaturedDish = preferences.featuredDishDate === todayKey() && preferences.includeFeaturedDish === true;
     preferences.moods = Array.isArray(preferences.moods) ? preferences.moods.map(String) : [];
-    preferences.skewerCount = Math.max(0, Math.min(10, Math.round(Number(preferences.skewerCount) || 0)));
+    preferences.skewerCount = FIXED_SKEWER_COUNT;
+    preferences.mustShishito = true;
+    preferences.wantFinish = false;
     const outOfStock = saved.outOfStock && typeof saved.outOfStock.date === 'string' && Array.isArray(saved.outOfStock.ids)
       ? { date: saved.outOfStock.date, ids: saved.outOfStock.ids.map(String) }
       : base.outOfStock;
@@ -1586,7 +1567,7 @@
         renderOrder(currentOrder, false);
         schedulePendingReminder();
       } else {
-        $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>空腹度・気分から、バランスよく選びます。</p></div>';
+        $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>つまみの量と食べたいものから、バランスよく選びます。</p></div>';
       }
       status.textContent = `メニュー ${state.menu.length}品・履歴 ${state.history.length}件を復元しました。`;
     } catch (error) {
@@ -1632,7 +1613,7 @@
     const initialMenu = cloneMenu(state.initialMenu?.length ? state.initialMenu : base.initialMenu);
     state = { ...base, menu: initialMenu, initialMenu: cloneMenu(initialMenu) }; currentOrder = null; saveState(); renderMoodChoices(); applyPreferences(); renderMenuEditor(); renderHistorySummary();
     $('#dataDialog').close();
-    $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>空腹度・気分から、バランスよく選びます。</p></div>';
+    $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>つまみの量と食べたいものから、バランスよく選びます。</p></div>';
   }
 
   function registerInitialMenu() {

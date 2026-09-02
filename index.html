@@ -39,27 +39,13 @@
 
       <form id="preferenceForm" class="panel preferences">
         <fieldset class="field-group">
-          <legend>お腹の空き具合</legend>
+          <legend>つまみの量</legend>
           <div class="hunger-choice-grid" id="hungerChoices">
-            <label class="hunger-choice-card"><input type="radio" name="hunger" value="light" /><span><strong>軽め</strong><small>串以外</small><b>1品</b></span></label>
-            <label class="hunger-choice-card"><input type="radio" name="hunger" value="normal" checked /><span><strong>普通</strong><small>串以外</small><b>2品</b></span></label>
+            <label class="hunger-choice-card"><input type="radio" name="hunger" value="light" /><span><strong>軽め</strong><small>つまみ・小鉢</small><b>1品</b></span></label>
+            <label class="hunger-choice-card"><input type="radio" name="hunger" value="normal" checked /><span><strong>普通</strong><small>つまみ・小鉢</small><b>2品</b></span></label>
           </div>
-          <p class="field-help hunger-help">串・飲み物・割代・締めは、この品数とは別に選びます。</p>
+          <p class="field-help hunger-help">つまみ・小鉢だけの品数です。串はししとうを含む5本固定です。</p>
         </fieldset>
-
-        <fieldset class="field-group dish-candidate-section" id="dishCandidateSection">
-          <legend>まず1品選ぶ <span class="optional">空腹度に合わせた候補</span></legend>
-          <div class="dish-candidate-grid" id="dishCandidates" role="radiogroup" aria-label="串以外の料理候補"></div>
-          <p class="field-help dish-candidate-status" id="dishCandidateStatus" aria-live="polite">候補を準備しています。</p>
-        </fieldset>
-
-        <div class="field-group">
-          <label for="skewerCount">串物の本数 <span class="optional">ししとうも1本として数えます</span></label>
-          <div class="budget-control">
-            <input id="skewerCount" name="skewerCount" type="range" min="0" max="10" step="1" value="3" />
-            <output id="skewerCountOutput" for="skewerCount">3本</output>
-          </div>
-        </div>
 
         <fieldset class="field-group">
           <legend>最初の飲み物</legend>
@@ -68,23 +54,33 @@
         </fieldset>
 
         <fieldset class="field-group">
-          <legend>今日の気分 <span class="optional">登録が多い食べ物5種・複数選択可</span></legend>
+          <legend>食べたいもの（任意） <span class="optional">複数選択可</span></legend>
           <div class="tag-choices" id="moodChoices"></div>
         </fieldset>
 
-        <div class="toggle-list">
-          <label class="toggle"><input id="mustShishito" type="checkbox" checked /><span></span>ししとうを必ず入れる</label>
-          <label class="toggle"><input id="wantFinish" type="checkbox" /><span></span>締めを入れる</label>
-        </div>
+        <fieldset class="field-group featured-dish-section">
+          <legend>今日の一品候補</legend>
+          <div class="featured-dish-card">
+            <div class="featured-dish-summary" id="featuredDishCandidate" aria-live="polite">
+              <p>候補を準備しています。</p>
+            </div>
+            <label class="toggle featured-dish-toggle">
+              <strong>この一品を注文に入れる</strong>
+              <input id="includeFeaturedDish" type="checkbox" disabled />
+              <span aria-hidden="true"></span>
+            </label>
+          </div>
+          <p class="field-help">直近3回来店で頼んだ一品料理をなるべく避けて選びます。</p>
+        </fieldset>
 
-        <button class="primary-button" id="createOrderButton" type="submit" disabled>この条件で注文を考える <span>→</span></button>
+        <button class="primary-button" id="createOrderButton" type="submit">この条件で注文を考える <span>→</span></button>
       </form>
 
       <section id="result" class="result-section" aria-live="polite">
         <div class="empty-state">
           <span class="empty-illustration">🍢</span>
           <h2>条件を選んで注文案を作ろう</h2>
-          <p>空腹度・気分から、バランスよく選びます。</p>
+          <p>つまみの量と食べたいものから、バランスよく選びます。</p>
         </div>
       </section>
 

@@ -6,7 +6,7 @@ const appPath = new URL('../app.js', import.meta.url);
 const source = readFileSync(appPath, 'utf8');
 const instrumented = source.replace(
   /\n\s*boot\(\);\s*\n\}\)\(\);\s*$/,
-  '\n  globalThis.__hidakaTest = { createOrder, getDishCandidates, normalizeHungerPreference, replaceOutOfStockItems, replaceOrderItemManually, regenerateOrderKeepingManualItems, normalizePendingOrder, normalizeHistoryItem, normalizeVisitContext, normalizeFeedback, hasFeedback, feedbackSummary, createVisitContext, createHistoryRecord, normalizeStore, normalizeStores, normalizeMenuItem, normalizeDefaultMenuRows, compareMenuEditorItems, compareMenuEditorItemsByCategory, buildMenuCsv, mergeImportedData, createFullBackupPayload, normalizeFullBackup, setState: value => { state = value; }, getState: () => state };\n})();\n'
+  '\n  globalThis.__hidakaTest = { createOrder, getFeaturedDishCandidate, recentFeaturedDishNames, normalizeHungerPreference, replaceOutOfStockItems, replaceOrderItemManually, regenerateOrderKeepingManualItems, normalizePendingOrder, normalizeHistoryItem, normalizeVisitContext, normalizeFeedback, hasFeedback, feedbackSummary, createVisitContext, createHistoryRecord, normalizeStore, normalizeStores, normalizeMenuItem, normalizeDefaultMenuRows, compareMenuEditorItems, compareMenuEditorItemsByCategory, buildMenuCsv, mergeImportedData, createFullBackupPayload, normalizeFullBackup, setState: value => { state = value; }, getState: () => state };\n})();\n'
 );
 assert.notEqual(instrumented, source, 'app.js のテスト準備に失敗しました。');
 
@@ -66,13 +66,14 @@ assert.throws(() => test.normalizeDefaultMenuRows([
   { メニューID: 'duplicate', 料理名: '重複2', 価格: 200 }
 ]), /重複/);
 
+const today = new Intl.DateTimeFormat('sv-SE').format(new Date());
 const drink = { id: 'drink', name: '飲み物', price: 400, category: 'drink', tags: [], actual: true };
 const small = { id: 'small', name: '小皿', price: 300, category: 'small', tags: [], actual: true };
 const soldOut = { id: 'sold-out', name: '品切れ串', price: 200, category: 'skewer', tags: ['鶏'], actual: true };
 const replacement = { id: 'replacement', name: '代わりの串', price: 180, category: 'skewer', tags: ['鶏'], actual: true };
 const pausedReplacement = { id: 'paused-replacement', name: '休止中の代わり串', price: 200, category: 'skewer', tags: ['鶏'], actual: true, available: false };
 const fee = { id: 'fee', name: '割代', price: 220, category: 'fee', tags: [], actual: true };
-const preferences = { budget: 3000, hunger: 'normal', skewerCount: 1, drink: 'drink', moods: [], mustShishito: false, wantFinish: false, avoidRecent: false };
+const preferences = { budget: 3000, hunger: 'normal', selectedDishId: '', featuredDishId: '', featuredDishDate: today, includeFeaturedDish: false, skewerCount: 5, drink: 'drink', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true };
 const originalOrder = { items: [drink, small, soldOut, fee], total: 1120, budget: 3000, unavailable: [], preferences, excludedIds: [] };
 
 test.setState({ menu: [drink, small, soldOut, replacement], history: [] });
@@ -91,7 +92,6 @@ assert.equal(removed.items.map(item => item.id).join(','), 'drink,small,fee');
 assert.equal(removed.total, 920);
 assert.match(removed.unavailable.join('\n'), /この品だけ外しました/);
 
-const today = new Intl.DateTimeFormat('sv-SE').format(new Date());
 const manuallyAdded = { id: 'manual', name: '手動追加料理', price: 500, category: 'main', tags: [], actual: true, manuallyAdded: true };
 const manualReplacement = { id: 'manual-replacement', name: '自分で選んだ料理', price: 450, category: 'main', tags: ['魚介'], actual: true };
 const manuallyChangedOrder = test.replaceOrderItemManually(originalOrder, 1, manualReplacement, '今回は気分ではない');
@@ -110,38 +110,62 @@ assert.equal(regenerated.total, regenerated.items.reduce((sum, item) => sum + it
 test.setState({ menu: [small, manualReplacement], history: [], outOfStock: { date: today, ids: [] } });
 const changedItemKept = test.regenerateOrderKeepingManualItems(manuallyChangedOrder, { ...preferences, drink: 'none', skewerCount: 0 });
 assert.equal(changedItemKept.items.filter(item => item.manuallyChanged).map(item => item.id).join(','), manualReplacement.id);
-assert.equal(changedItemKept.items.filter(item => ['small', 'main'].includes(item.category)).length, 2);
+assert.equal(changedItemKept.items.filter(item => item.manuallyChanged).length, 1);
 
 const finish = { id: 'finish', name: '締め料理', price: 400, category: 'finish', tags: ['締め'], actual: true };
 test.setState({ menu: [finish], history: [], outOfStock: { date: today, ids: [] } });
 const withoutFinish = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: 'none', skewerCount: 0, wantFinish: false });
 assert.equal(withoutFinish.items.some(item => item.category === 'finish'), false);
 const withFinish = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: 'none', skewerCount: 0, wantFinish: true });
-assert.equal(withFinish.items.some(item => item.category === 'finish'), true);
+assert.equal(withFinish.items.some(item => item.category === 'finish'), false);
 
+const shishito = { id: 'shishito', name: 'ししとう', price: 165, category: 'skewer', tags: ['野菜', 'ししとう'], actual: true };
 const meatSkewer = { id: 'meat-skewer', name: '豚肉串', price: 200, category: 'skewer', tags: ['豚'], actual: true };
-test.setState({ menu: [small, meatSkewer], history: [], outOfStock: { date: today, ids: [] } });
+const chickenSkewers = Array.from({ length: 4 }, (_, index) => ({ id: `chicken-skewer-${index}`, name: `鶏串${index + 1}`, price: 200, category: 'skewer', tags: ['鶏'], actual: true }));
+test.setState({ menu: [small, shishito, meatSkewer, ...chickenSkewers], history: [], outOfStock: { date: today, ids: [] } });
 const lightOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none', skewerCount: 1, wantFinish: false });
 assert.equal(lightOrder.items.some(item => item.id === 'meat-skewer'), true);
+assert.equal(lightOrder.items.filter(item => item.category === 'skewer').length, 5);
+assert.equal(lightOrder.items.some(item => item.id === shishito.id), true);
+assert.equal(lightOrder.preferences.skewerCount, 5);
+assert.equal(lightOrder.preferences.mustShishito, true);
+assert.equal(lightOrder.preferences.wantFinish, false);
 
-const hungerDishA = { id: 'hunger-a', name: '空腹度料理A', price: 300, category: 'small', tags: ['豚'], actual: true };
-const hungerDishB = { id: 'hunger-b', name: '空腹度料理B', price: 300, category: 'small', tags: ['野菜'], actual: true };
-const hungerDishC = { id: 'hunger-c', name: '空腹度料理C', price: 300, category: 'main', tags: ['魚介'], actual: true };
-const hungerDishCount = order => order.items.filter(item => ['small', 'main'].includes(item.category)).length;
-test.setState({ menu: [hungerDishA, hungerDishB, hungerDishC], history: [], outOfStock: { date: today, ids: [] } });
-const intuitiveLightOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', selectedDishId: hungerDishA.id, drink: 'none', skewerCount: 0, wantFinish: false });
-const intuitiveNormalOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'normal', selectedDishId: hungerDishA.id, drink: 'none', skewerCount: 0, wantFinish: false });
+const hungerDishA = { id: 'hunger-a', name: 'つまみ料理A', price: 300, category: 'small', tags: ['豚'], actual: true };
+const hungerDishB = { id: 'hunger-b', name: 'つまみ料理B', price: 300, category: 'small', tags: ['野菜'], actual: true };
+const hungerDishC = { id: 'hunger-c', name: 'つまみ料理C', price: 300, category: 'small', tags: ['魚介'], actual: true };
+const mainDish = { id: 'main-dish', name: '一品料理', price: 500, category: 'main', tags: ['魚介'], actual: true };
+const hungerDishCount = order => order.items.filter(item => item.category === 'small').length;
+test.setState({ menu: [hungerDishA, hungerDishB, hungerDishC, mainDish, shishito, meatSkewer, ...chickenSkewers], history: [], outOfStock: { date: today, ids: [] } });
+const intuitiveLightOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none' });
+const intuitiveNormalOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'normal', drink: 'none' });
+const migratedHeartyOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'hearty', drink: 'none' });
 assert.equal(hungerDishCount(intuitiveLightOrder), 1);
 assert.equal(hungerDishCount(intuitiveNormalOrder), 2);
-assert.equal(intuitiveLightOrder.items.find(item => item.id === hungerDishA.id).userSelectedCandidate, true);
-assert.match(intuitiveLightOrder.items.find(item => item.id === hungerDishA.id).recommendationReason, /候補から選択/);
-assert.equal(intuitiveNormalOrder.items.find(item => item.id === hungerDishA.id).userSelectedCandidate, true);
-assert.match(intuitiveNormalOrder.items.find(item => ['small', 'main'].includes(item.category) && item.id !== hungerDishA.id).recommendationReason, /串以外 2品/);
+assert.equal(hungerDishCount(migratedHeartyOrder), 2);
+assert.equal(migratedHeartyOrder.items.some(item => item.category === 'main'), false);
 assert.equal(test.normalizeHungerPreference('hearty'), 'normal');
-assert.deepEqual(Array.from(test.getDishCandidates('normal'), item => item.id).sort(), [hungerDishA.id, hungerDishB.id].sort());
 test.setState({ menu: [hungerDishA], history: [], outOfStock: { date: today, ids: [] } });
-const lightStillAllowsMeat = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', selectedDishId: hungerDishA.id, drink: 'none', skewerCount: 0, wantFinish: false });
+const lightStillAllowsMeat = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none' });
 assert.equal(lightStillAllowsMeat.items.some(item => item.id === hungerDishA.id), true);
+
+const recentMainA = { id: 'recent-main-a', name: '直近一品A', price: 500, category: 'main', tags: [], actual: true };
+const recentMainB = { id: 'recent-main-b', name: '直近一品B', price: 500, category: 'main', tags: [], actual: true };
+const recentMainC = { id: 'recent-main-c', name: '直近一品C', price: 500, category: 'main', tags: [], actual: true };
+const freshMain = { id: 'fresh-main', name: '最近頼んでいない一品', price: 550, category: 'main', tags: ['魚介'], actual: true };
+const mainHistory = [recentMainA, recentMainB, recentMainC].map((item, index) => ({ date: `2026-09-0${index + 1}`, items: [{ menuId: item.id, name: item.name }] }));
+test.setState({ menu: [recentMainA, recentMainB, recentMainC, freshMain, shishito, meatSkewer, ...chickenSkewers, hungerDishA], preferences: { featuredDishDate: '' }, history: mainHistory, outOfStock: { date: today, ids: [] } });
+assert.deepEqual(Array.from(test.recentFeaturedDishNames(3)).sort(), [recentMainA.name, recentMainB.name, recentMainC.name].map(name => name.toLowerCase()).sort());
+const featuredDish = test.getFeaturedDishCandidate();
+assert.equal(featuredDish.id, freshMain.id);
+const featuredOffOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none', featuredDishId: freshMain.id, includeFeaturedDish: false });
+assert.equal(featuredOffOrder.items.some(item => item.category === 'main'), false);
+const featuredOnOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, hunger: 'light', drink: 'none', featuredDishId: freshMain.id, includeFeaturedDish: true });
+assert.equal(featuredOnOrder.items.filter(item => item.category === 'main').length, 1);
+assert.equal(featuredOnOrder.items.find(item => item.id === freshMain.id).featuredDishCandidate, true);
+assert.match(featuredOnOrder.items.find(item => item.id === freshMain.id).recommendationReason, /今日の一品候補/);
+test.setState({ menu: [recentMainA, freshMain], preferences: { featuredDishDate: today }, history: mainHistory, outOfStock: { date: today, ids: [] } });
+assert.equal(test.getFeaturedDishCandidate(recentMainA.id).id, recentMainA.id);
 
 const pausedDrink = { ...drink, id: 'paused-drink', name: '休止中の飲み物', available: false };
 const pausedSkewer = { ...meatSkewer, id: 'paused-skewer', name: '休止中の串', available: false };
@@ -171,11 +195,8 @@ assert.equal(historyAwareOrder.items.some(item => item.id === 'recent-dish'), fa
 const porkBelly = { id: 'pork-belly', name: '豚バラ串', price: 200, category: 'skewer', tags: ['豚'], actual: true };
 const chickenSkewer = { id: 'chicken-skewer', name: '鶏もも串', price: 200, category: 'skewer', tags: ['鶏'], actual: true };
 test.setState({
-  menu: [porkBelly, chickenSkewer],
-  history: [
-    { date: today, items: [{ name: chickenSkewer.name }] },
-    { date: today, items: [{ name: porkBelly.name }] }
-  ],
+  menu: [porkBelly, shishito, chickenSkewer, ...chickenSkewers.slice(0, 3)],
+  history: [{ date: today, items: [{ name: porkBelly.name }] }],
   outOfStock: { date: today, ids: [] }
 });
 const noConsecutivePork = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: 'none', skewerCount: 1, wantFinish: false });
@@ -188,7 +209,7 @@ assert.equal(onlyAvailableRepeat.items.some(item => item.id === 'pork-belly'), t
 
 const largeBeer = { id: 'large-beer', name: '大瓶ビール', price: 726, category: 'drink', tags: ['飲み物'], actual: true };
 const expensiveSmall = { id: 'expensive-small', name: '高額な一品', price: 1540, category: 'small', tags: ['牛'], actual: true };
-const fiveSkewers = Array.from({ length: 5 }, (_, index) => ({ id: `skewer-${index}`, name: `串${index + 1}`, price: 198, category: 'skewer', tags: ['豚'], actual: true }));
+const fiveSkewers = [shishito, ...Array.from({ length: 4 }, (_, index) => ({ id: `skewer-${index}`, name: `串${index + 1}`, price: 198, category: 'skewer', tags: ['豚'], actual: true }))];
 test.setState({ menu: [largeBeer, expensiveSmall, ...fiveSkewers], history: [], outOfStock: { date: today, ids: [] } });
 const softBudgetOrder = test.regenerateOrderKeepingManualItems(null, { ...preferences, drink: largeBeer.id, skewerCount: 5, wantFinish: false });
 assert.equal(softBudgetOrder.items.filter(item => item.category === 'skewer').length, 5);
