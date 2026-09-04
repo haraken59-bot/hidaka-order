@@ -6,9 +6,9 @@
   const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
   const DATA_SCHEMA_VERSION = 6;
-  const APP_VERSION = '1.15.2';
-  const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-08-31-v1';
-  const MENU_DATA_UPDATED_AT = '2026-09-01';
+  const APP_VERSION = '1.15.3';
+  const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-09-04-v1';
+  const MENU_DATA_UPDATED_AT = '2026-09-04';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
   const DEFAULT_STORE_ID = 'hidaka-001';
   const FALLBACK_STORE = { id: DEFAULT_STORE_ID, name: 'やきとり日高', area: '', memo: '' };
@@ -19,9 +19,12 @@
   const MOOD_LABEL = { pork: '豚', chicken: '鶏', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの' };
   const TAG_LABEL = { pork: '豚', chicken: '鶏', beef: '牛', seafood: '魚介', vegetable: '野菜', spicy: '辛いもの', light: '軽め', drink: '飲み物', finish: '締め', rice: 'ご飯', noodle: '麺', soup: '汁物', dessert: 'デザート', sweet: '甘いもの', alcohol: 'アルコール', nonalcohol: 'ノンアルコール', shishito: 'ししとう' };
   const TAG_CANONICAL = { pork: 'pork', '豚': 'pork', chicken: 'chicken', '鶏': 'chicken', beef: 'beef', '牛': 'beef', seafood: 'seafood', '魚介': 'seafood', vegetable: 'vegetable', '野菜': 'vegetable', spicy: 'spicy', '辛いもの': 'spicy', light: 'light', '軽め': 'light', drink: 'drink', '飲み物': 'drink', finish: 'finish', '締め': 'finish', rice: 'rice', 'ご飯': 'rice', noodle: 'noodle', '麺': 'noodle', soup: 'soup', '汁物': 'soup', dessert: 'dessert', 'デザート': 'dessert', sweet: 'sweet', '甘いもの': 'sweet', alcohol: 'alcohol', 'アルコール': 'alcohol', nonalcohol: 'nonalcohol', 'ノンアルコール': 'nonalcohol', shishito: 'shishito', 'ししとう': 'shishito' };
+  Object.assign(TAG_LABEL, { offal: '内臓', egg: '卵' });
+  Object.assign(TAG_CANONICAL, { offal: 'offal', '内臓': 'offal', egg: 'egg', '卵': 'egg' });
   const MENU_CATEGORY_OPTIONS = ['drink', 'small', 'skewer', 'main', 'finish', 'dessert'];
   const MENU_TAG_GROUPS = [
     { label: '食材', tags: ['pork', 'chicken', 'beef', 'seafood', 'vegetable'] },
+    { label: '食材の補助タグ', tags: ['offal', 'egg'] },
     { label: '内容・用途', tags: ['drink', 'finish', 'rice', 'noodle', 'soup', 'dessert'] },
     { label: '特徴', tags: ['spicy', 'light', 'sweet', 'alcohol', 'nonalcohol', 'shishito'] }
   ];
@@ -32,6 +35,22 @@
   const HUNGER_LABEL = { light: '軽め', normal: '普通' };
   const HUNGER_DISH_COUNT = { light: 1, normal: 2 };
   const FIXED_SKEWER_COUNT = 5;
+  const MENU_CORRECTION_ID = 'confirmed-skewer-tags-2026-09-04-v1';
+  // 原材料は利用者に一品ずつ確認済み。牛さがりは内臓系に含めない。
+  const CONFIRMED_SKEWER_CORRECTIONS = [
+    { id: 'base-043', names: ['しそ巻き'], tags: ['pork', 'vegetable'] },
+    { id: 'base-018', names: ['ピーマン肉詰め串'], tags: ['beef', 'pork', 'vegetable'] },
+    { id: 'base-044', names: ['オクラ巻'], tags: ['pork', 'vegetable'] },
+    { id: 'base-045', names: ['エノキ巻'], tags: ['pork', 'vegetable'] },
+    { id: 'base-022', names: ['春蘭の牛バラ巻', '春菊の牛バラ巻'], name: '春菊の牛バラ巻', tags: ['beef', 'vegetable'] },
+    { id: 'base-030', names: ['うずらの卵'], tags: ['egg'] },
+    { id: 'base-015', names: ['赤センマイ串（ギアラ）牛の第4胃袋'], tags: ['beef', 'offal'] },
+    { id: 'base-027', names: ['はつ（心臓）'], tags: ['chicken', 'offal'] },
+    { id: 'base-031', names: ['砂ずり'], tags: ['chicken', 'offal'] },
+    { id: 'base-032', names: ['きも（レバー）'], tags: ['chicken', 'offal'] },
+    { id: 'base-039', names: ['しろ'], tags: ['pork', 'offal'] },
+    { id: 'base-035', names: ['牛さがり'], tags: ['beef'] }
+  ];
   const PENDING_REMINDER_MS = 10 * 60 * 1000;
   const fallbackMenu = [
     { id: 'highball', name: 'ハイボール', price: 380, category: 'drink', tags: ['drink', 'light'], actual: false },
@@ -73,7 +92,7 @@
     const stores = cloneStores(defaultStores);
     const activeStoreId = stores.some(store => store.id === DEFAULT_STORE_ID) ? DEFAULT_STORE_ID : stores[0].id;
     const menu = defaultMenu.map(item => ({ ...item, storeId: item.storeId || activeStoreId, tags: item.tags.map(localizeTag) }));
-    return { dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', selectedDishId: '', featuredDishId: '', featuredDishDate: '', includeFeaturedDish: false, skewerCount: FIXED_SKEWER_COUNT, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, menuSortMode: 'tag', outOfStock: { date: todayKey(), ids: [] }, pendingOrder: null };
+    return { dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, appliedMenuCorrections: [MENU_CORRECTION_ID], stores, activeStoreId, menu, initialMenu: cloneMenu(menu), history: [], preferences: { budget: ORDER_BUDGET, hunger: 'normal', selectedDishId: '', featuredDishId: '', featuredDishDate: '', includeFeaturedDish: false, skewerCount: FIXED_SKEWER_COUNT, drink: 'highball', moods: [], mustShishito: true, wantFinish: false, avoidRecent: true }, menuSortMode: 'tag', outOfStock: { date: todayKey(), ids: [] }, pendingOrder: null };
   }
   let state;
   let currentOrder = null;
@@ -94,9 +113,9 @@
       const requestedStoreId = String(saved.activeStoreId || base.activeStoreId);
       const activeStoreId = stores.some(store => store.id === requestedStoreId) ? requestedStoreId : base.activeStoreId;
       const outOfStock = saved.outOfStock && typeof saved.outOfStock.date === 'string' && Array.isArray(saved.outOfStock.ids) ? { date: saved.outOfStock.date, ids: saved.outOfStock.ids.map(String) } : base.outOfStock;
-      const shouldInstallNewBaseMenu = saved.defaultMenuVersion !== activeDefaultMenuVersion;
-      const menu = shouldInstallNewBaseMenu ? cloneMenu(base.menu) : saved.menu.map(normalizeMenuItem).filter(Boolean);
-      const initialMenu = shouldInstallNewBaseMenu ? cloneMenu(base.initialMenu) : (Array.isArray(saved.initialMenu) ? saved.initialMenu.map(normalizeMenuItem).filter(Boolean) : cloneMenu(menu));
+      // 配布CSVの版や一時的な読込失敗を理由に、端末のメニューを置換しない。
+      const menu = saved.menu.map(normalizeMenuItem).filter(Boolean);
+      const initialMenu = Array.isArray(saved.initialMenu) ? saved.initialMenu.map(normalizeMenuItem).filter(Boolean) : cloneMenu(menu);
       const menuSortMode = ['tag', 'category'].includes(saved.menuSortMode) ? saved.menuSortMode : base.menuSortMode;
       const preferences = { ...base.preferences, ...(saved.preferences || {}), avoidRecent: true };
       preferences.hunger = normalizeHungerPreference(preferences.hunger);
@@ -107,7 +126,7 @@
       preferences.skewerCount = FIXED_SKEWER_COUNT;
       preferences.mustShishito = true;
       preferences.wantFinish = false;
-      return { ...base, ...saved, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, preferences, menuSortMode, outOfStock, menu, initialMenu, history: saved.history.map(entry => normalizeHistoryItem(entry, menu)).filter(Boolean), pendingOrder: normalizePendingOrder(saved.pendingOrder) };
+      return applyConfirmedMenuCorrections({ ...base, ...saved, appliedMenuCorrections: saved.appliedMenuCorrections, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, preferences, menuSortMode, outOfStock, menu, initialMenu, history: saved.history.map(entry => normalizeHistoryItem(entry, menu)).filter(Boolean), pendingOrder: normalizePendingOrder(saved.pendingOrder) });
     } catch { return defaultState(); }
   }
 
@@ -144,6 +163,21 @@
   }
 
   function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  function applyConfirmedMenuCorrections(saved) {
+    const applied = Array.isArray(saved.appliedMenuCorrections) ? saved.appliedMenuCorrections.filter(id => typeof id === 'string') : [];
+    if (applied.includes(MENU_CORRECTION_ID)) return saved;
+    const foodTags = new Set(['pork', 'chicken', 'beef', 'seafood', 'vegetable', 'offal', 'egg']);
+    const correctMenu = menu => menu.map(item => {
+      if (item.storeId !== DEFAULT_STORE_ID) return item;
+      // IDの流用・別商品への改名を誤更新しない。該当しない商品は追加しない。
+      const correction = CONFIRMED_SKEWER_CORRECTIONS.find(rule => rule.id === item.id && rule.names.some(name => historyNameKey(name) === historyNameKey(item.name)));
+      if (!correction) return item;
+      const otherTags = item.tags.filter(tag => !foodTags.has(canonicalTag(tag)));
+      return { ...item, name: correction.name || item.name, tags: [...correction.tags.map(localizeTag), ...otherTags] };
+    });
+    // 履歴・未記録注文の当時の商品名、価格、タグには触れない。
+    return { ...saved, menu: correctMenu(saved.menu), initialMenu: correctMenu(saved.initialMenu), appliedMenuCorrections: [...applied, MENU_CORRECTION_ID] };
+  }
   function getTodayOutOfStockIds() {
     const today = todayKey();
     if (state.outOfStock.date !== today) { state.outOfStock = { date: today, ids: [] }; saveState(); }
@@ -652,7 +686,9 @@
   }
 
   function historyNameKey(name) {
-    return String(name || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+    const key = String(name || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+    // 保存済み履歴は書き換えず、訂正前の名前でも重複回避を継続する。
+    return key === '春蘭の牛バラ巻' ? '春菊の牛バラ巻' : key;
   }
 
   function sortedHistory() {
@@ -1527,7 +1563,7 @@
     const exportedAt = String(raw.exportedAt || '');
     return {
       exportedAt: Number.isFinite(new Date(exportedAt).getTime()) ? exportedAt : '',
-      state: { ...base, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu, history, preferences, menuSortMode: ['tag', 'category'].includes(saved.menuSortMode) ? saved.menuSortMode : base.menuSortMode, outOfStock, pendingOrder }
+      state: applyConfirmedMenuCorrections({ ...base, appliedMenuCorrections: saved.appliedMenuCorrections, dataSchemaVersion: DATA_SCHEMA_VERSION, defaultMenuVersion: activeDefaultMenuVersion, stores, activeStoreId, menu, initialMenu, history, preferences, menuSortMode: ['tag', 'category'].includes(saved.menuSortMode) ? saved.menuSortMode : base.menuSortMode, outOfStock, pendingOrder })
     };
   }
 
