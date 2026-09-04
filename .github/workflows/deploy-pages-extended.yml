@@ -22,10 +22,21 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
+      - name: Test app and prepare public files
+        env:
+          HIDAKA_SUPABASE_PUBLIC_CONFIG: ${{ vars.HIDAKA_SUPABASE_PUBLIC_CONFIG }}
+        run: |
+          node --check app.js
+          node --check supabase-connection.js
+          node scripts/test-stock-replacement.mjs
+          node scripts/test-supabase-auth.mjs
+          node scripts/test-pages-build.mjs
+          node scripts/build-pages.mjs
+
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: .
+          path: dist
 
   deploy:
     environment:

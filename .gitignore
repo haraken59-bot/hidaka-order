@@ -7,6 +7,7 @@
 !.env.example
 config.local.js
 config.local.json
+dist/
 
 # Supabase local state and private import data
 supabase/.temp/
