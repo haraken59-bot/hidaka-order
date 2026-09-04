@@ -91,28 +91,45 @@
       <form method="dialog" class="dialog-header">
         <div>
           <p class="eyebrow">端末内に保存されます</p>
-          <h2>メニュー・履歴の管理</h2>
+          <button type="button" class="text-button" id="dataBackButton" hidden>← データ管理に戻る</button>
+          <h2 id="dataPageTitle" tabindex="-1">データ管理</h2>
         </div>
         <button class="icon-button" value="cancel" aria-label="閉じる">×</button>
       </form>
       <div class="dialog-content">
-        <section class="data-section cloud-read-section">
-          <h3>クラウド接続（確認用）</h3>
-          <p>焼酎キープ管理と同じ利用者でログインし、日高のデータを読み取れるかだけ確認します。現在の保存先は端末内のままです。</p>
+        <nav id="dataManagementHome" class="management-links" aria-label="データ管理の項目">
+          <button type="button" data-open-management="cloud">クラウド管理 <span aria-hidden="true">›</span></button>
+          <button type="button" data-open-management="backup">バックアップ・復元 <span aria-hidden="true">›</span></button>
+          <button type="button" data-open-management="import">データ取り込み <span aria-hidden="true">›</span></button>
+          <button type="button" data-open-management="export">データ書き出し <span aria-hidden="true">›</span></button>
+        </nav>
+        <section class="data-section cloud-read-section" data-management-page="cloud" hidden>
+          <h3>クラウド管理</h3>
+          <p>保存の基準はこの端末です。バックアップ・復元はボタンを押した時だけ行い、自動同期しません。焼酎キープ管理と同じ利用者でログインしてください。</p>
           <div class="cloud-status-card">
             <strong id="cloudAuthSummary">接続状態を確認しています</strong>
             <span id="cloudDataCounts">まだクラウドデータを読み取っていません。</span>
           </div>
           <div class="cloud-actions">
             <button type="button" class="secondary-button" id="cloudLoginButton" disabled>クラウドへログイン</button>
-            <button type="button" class="secondary-button" id="cloudVerifyButton" hidden>もう一度読み取り確認</button>
+            <button type="button" class="secondary-button" id="cloudVerifyButton" hidden>クラウド上のデータ件数を確認</button>
             <button type="button" class="text-button" id="cloudLogoutButton" hidden>ログアウト</button>
           </div>
+          <div class="cloud-status-card">
+            <strong>クラウド最終バックアップ日時</strong>
+            <span id="cloudBackupTime">未確認</span>
+            <span id="cloudBackupCounts">ログイン後に確認できます。</span>
+          </div>
+          <div class="management-links">
+            <button type="button" id="cloudBackupButton" disabled>クラウドへバックアップ</button>
+            <button type="button" id="cloudRestoreButton" disabled>クラウドから復元</button>
+          </div>
+          <p class="field-help">バックアップは利用者ごとの最新1件を保存します。既存のクラウド側メニューマスタや来店テーブルは更新しません。復元前には日時・件数を確認できます。</p>
           <p class="cloud-action-status" id="cloudActionStatus" aria-live="polite"></p>
         </section>
 
-        <section class="data-section">
-          <h3>端末データの完全バックアップ</h3>
+        <section class="data-section" data-management-page="backup" hidden>
+          <h3>端末バックアップ（予備）</h3>
           <p>メニュー・初期メニュー・注文履歴・設定・当日の品切れ・未記録注文を、1つのJSONファイルに保存します。</p>
           <div class="backup-actions">
             <button type="button" class="secondary-button" id="downloadFullBackup">全データをバックアップ</button>
@@ -120,9 +137,10 @@
           </div>
           <p class="field-help">復元時は、内容と件数を確認してから現在の端末データを上書きします。</p>
           <p class="import-status" id="fullBackupStatus" aria-live="polite"></p>
+          <button type="button" class="secondary-button" id="downloadBeforeCloudRestore" hidden>クラウド復元前の端末データを保存</button>
         </section>
 
-        <section class="data-section">
+        <section class="data-section" data-management-page="import" hidden>
           <h3>外部データを取り込む</h3>
           <p>CSV または JSON のメニュー・注文履歴を読み込みます。</p>
           <div class="import-grid">
@@ -138,14 +156,21 @@
             <label><input type="radio" name="importMode" value="replace" /> すべて入れ替え</label>
           </div>
           <p class="import-status" id="importStatus"></p>
-          <div class="text-button-row">
-            <button type="button" class="text-button" id="downloadCurrentMenu">現在のメニューをバックアップ</button>
-            <button type="button" class="text-button" id="downloadMenuTemplate">基本メニューCSVを保存</button>
-            <button type="button" class="text-button" id="downloadHistoryTemplate">履歴CSV見本</button>
-          </div>
         </section>
 
-        <section class="data-section">
+        <section class="data-section" data-management-page="export" hidden>
+          <h3>データ書き出し</h3>
+          <div class="management-links">
+            <button type="button" id="downloadCurrentMenu">現在のメニューを書き出す（CSV）</button>
+            <button type="button" id="downloadMenuTemplate">基本メニューCSVを保存</button>
+            <button type="button" id="downloadHistoryTemplate">履歴CSV見本を保存</button>
+          </div>
+          <p class="field-help">履歴CSVは入力用の見本です。実際の注文履歴の保管には「バックアップ・復元」の全データJSONをご利用ください。</p>
+          <p class="import-status" id="exportStatus" aria-live="polite"></p>
+        </section>
+
+        <section class="data-section" data-management-page="import" hidden>
+          <p>手動でメニューを編集・追加する場合はこちら。</p>
           <div class="section-title-row"><h3>メニュー <span id="menuCount"></span></h3><button class="text-button" type="button" id="addMenuItem">＋ 追加</button></div>
           <div class="menu-sort-control" aria-label="メニューの並び順">
             <span>並び順</span>
@@ -157,7 +182,7 @@
           <div class="menu-editor" id="menuEditor"></div>
         </section>
 
-        <section class="data-section danger-zone">
+        <section class="data-section danger-zone" data-management-page="backup" hidden>
           <h3>データの初期化</h3>
           <p>「初期データに戻す」では、登録済みの初期メニューへ戻します。</p>
           <button type="button" class="secondary-button" id="registerInitialMenu">現在のメニューを初期データに登録</button>
@@ -169,8 +194,20 @@
           <span>店舗 <strong id="storeInfo"></strong></span>
           <span>アプリ版 <strong id="appVersion"></strong></span>
           <span>メニューデータ <strong id="menuDataVersion"></strong></span>
-          <span>クラウド準備 <strong id="supabaseStatus">未確認（保存は端末）</strong></span>
+          <span>クラウド <strong id="supabaseStatus">未確認（保存は端末）</strong></span>
         </footer>
+      </div>
+    </dialog>
+
+    <dialog id="cloudRestoreDialog" class="item-dialog" aria-labelledby="cloudRestoreTitle">
+      <h2 id="cloudRestoreTitle">クラウドから復元する前に</h2>
+      <p id="cloudRestoreComparison" class="backup-comparison"></p>
+      <p class="restore-warning">このクラウドデータで現在の端末データを上書きします。よろしいですか？</p>
+      <p class="dialog-note">古いデータで上書きしないよう、日時・件数・最新の注文日を確認してください。表示したバックアップを復元し、自動マージは行いません。復元前の端末データは予備として端末内に1件保存します。</p>
+      <p id="cloudRestoreStatus" class="cloud-action-status" aria-live="polite"></p>
+      <div class="form-actions">
+        <button type="button" class="secondary-button" id="cancelCloudRestore">キャンセル</button>
+        <button type="button" class="primary-button" id="confirmCloudRestore">上書きして復元する</button>
       </div>
     </dialog>
 
@@ -332,7 +369,7 @@
     <dialog id="cloudLoginDialog" class="item-dialog cloud-login-dialog">
       <form id="cloudLoginForm">
         <div>
-          <p class="eyebrow">読取確認だけ行います</p>
+          <p class="eyebrow">ログインだけでは保存・復元しません</p>
           <h2>クラウドへログイン</h2>
         </div>
         <p class="dialog-note"><strong>1.</strong> 焼酎キープ管理で使用しているものと同じメールアドレスへ、ログイン用メールを送ります。</p>

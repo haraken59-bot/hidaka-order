@@ -18,9 +18,9 @@ export function validatePublicConfig(text) {
     || CONFIG_FIELDS.some(key => !Object.hasOwn(raw, key))) {
     throw new Error('公開用接続設定には許可された7項目だけを指定してください。');
   }
-  if (raw.enabled !== true || raw.mode !== 'connection-check-only'
+  if (raw.enabled !== true || !['connection-check-only', 'manual-backup'].includes(raw.mode)
     || raw.appKey !== 'hidaka-order' || raw.legacyStoreId !== 'hidaka-001') {
-    throw new Error('日高オーダーの読み取り確認用設定が必要です。');
+    throw new Error('日高オーダーの読み取り確認または手動バックアップ用設定が必要です。');
   }
   // Never accept a secret key or a legacy service-role JWT in a public artifact.
   if (typeof raw.publishableKey !== 'string' || !/^sb_publishable_[A-Za-z0-9_-]+$/.test(raw.publishableKey)) {

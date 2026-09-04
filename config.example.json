@@ -1,6 +1,6 @@
 {
   "enabled": false,
-  "mode": "connection-check-only",
+  "mode": "manual-backup",
   "supabaseUrl": "https://your-project-ref.supabase.co",
   "publishableKey": "sb_publishable_your_key",
   "appKey": "hidaka-order",

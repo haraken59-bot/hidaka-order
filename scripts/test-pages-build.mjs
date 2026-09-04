@@ -11,6 +11,8 @@ const config = {
   supabaseStoreId: '112e03a4-8d7f-41f4-9984-d39536398f11'
 };
 assert.deepEqual(validatePublicConfig(JSON.stringify(config)), config);
+assert.equal(validatePublicConfig(JSON.stringify({ ...config, mode: 'manual-backup' })).mode, 'manual-backup');
+assert.throws(() => validatePublicConfig(JSON.stringify({ ...config, mode: 'auto-sync' })));
 for (const invalid of [undefined, '', '{}', JSON.stringify({ ...config, enabled: false }),
   JSON.stringify({ ...config, password: 'must-not-publish' }),
   JSON.stringify({ ...config, publishableKey: 'sb_secret_not_allowed' }),
@@ -60,9 +62,9 @@ try {
   assert.equal(status.reachable, true);
   assert.equal(status.authenticated, false);
   assert.equal(status.storageMode, 'local-only');
-  const elements = new Map(['cloudAuthSummary', 'cloudDataCounts', 'cloudLoginButton', 'cloudVerifyButton', 'cloudLogoutButton'].map(id => [`#${id}`, { disabled: true, hidden: false, textContent: '' }]));
+  const elements = new Map(['cloudAuthSummary', 'cloudDataCounts', 'cloudLoginButton', 'cloudVerifyButton', 'cloudLogoutButton', 'cloudBackupButton', 'cloudRestoreButton', 'cloudBackupTime', 'cloudBackupCounts'].map(id => [`#${id}`, { disabled: true, hidden: false, textContent: '' }]));
   const renderCode = appSource.slice(appSource.indexOf('  function renderCloudAuthStatus('), appSource.indexOf('  function friendlyCloudError('));
-  vm.runInNewContext(`${renderCode}\nrenderCloudAuthStatus(status);`, { status, $: id => elements.get(id) });
+  vm.runInNewContext(`${renderCode}\nrenderCloudAuthStatus(status);`, { status, cloudBusy: false, preparedCloudRestore: null, $: id => elements.get(id) });
   assert.equal(elements.get('#cloudLoginButton').disabled, false, 'public configuration must enable the login button');
   assert.equal(elements.get('#cloudLoginButton').hidden, false);
   assert.equal(calls.length, 2, 'initialization must not send emails or access user data');

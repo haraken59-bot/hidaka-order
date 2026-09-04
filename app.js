@@ -6,7 +6,8 @@
   const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
   const DATA_SCHEMA_VERSION = 6;
-  const APP_VERSION = '1.15.3';
+  const APP_VERSION = '1.16.0';
+  const BEFORE_CLOUD_RESTORE_KEY = 'hidaka-order-before-cloud-restore-v1';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-09-04-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-04';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
@@ -96,6 +97,8 @@
   }
   let state;
   let currentOrder = null;
+  let cloudBusy = false;
+  let preparedCloudRestore = null;
   let pendingReminderTimer = null;
 
   const $ = (selector, parent = document) => parent.querySelector(selector);
@@ -512,7 +515,16 @@
     $('#cancelCloudLogin').addEventListener('click', () => $('#cloudLoginDialog').close());
     $('#cloudVerifyButton').addEventListener('click', verifyCloudRead);
     $('#cloudLogoutButton').addEventListener('click', logoutCloud);
+    $('#cloudBackupButton').addEventListener('click', backupToCloud);
+    $('#cloudRestoreButton').addEventListener('click', previewCloudRestore);
+    $('#confirmCloudRestore').addEventListener('click', confirmCloudRestore);
+    $('#cancelCloudRestore').addEventListener('click', () => $('#cloudRestoreDialog').close());
+    $('#cloudRestoreDialog').addEventListener('close', () => { preparedCloudRestore = null; });
+    $('#cloudRestoreDialog').addEventListener('cancel', event => { if (cloudBusy) event.preventDefault(); });
+    $('#downloadBeforeCloudRestore').addEventListener('click', downloadBeforeCloudRestore);
     $('#dataButton').addEventListener('click', openDataDialog);
+    $$('[data-open-management]').forEach(button => button.addEventListener('click', () => showDataPage(button.dataset.openManagement)));
+    $('#dataBackButton').addEventListener('click', () => showDataPage('home'));
     $$('input[name="menuSortMode"]').forEach(input => input.addEventListener('change', () => {
       if (!input.checked) return;
       state.menuSortMode = input.value;
@@ -534,7 +546,10 @@
     $('#importFile').addEventListener('change', importFile);
     $('#downloadCurrentMenu').addEventListener('click', downloadCurrentMenuBackup);
     $('#downloadMenuTemplate').addEventListener('click', downloadDefaultMenu);
-    $('#downloadHistoryTemplate').addEventListener('click', () => download('hidaka-history-sample.csv', `店舗ID,日付,注文\n${getActiveStoreId()},2026-08-01,ハイボール|酢モツ|ししとう串|手羽先\n`));
+    $('#downloadHistoryTemplate').addEventListener('click', () => {
+      download('hidaka-history-sample.csv', `店舗ID,日付,注文\n${getActiveStoreId()},2026-08-01,ハイボール|酢モツ|ししとう串|手羽先\n`);
+      $('#exportStatus').textContent = '履歴CSVの入力用見本を保存しました。';
+    });
     $('#resetData').addEventListener('click', resetData);
     $('#registerInitialMenu').addEventListener('click', registerInitialMenu);
     $('#pendingOrderForm').addEventListener('submit', event => { event.preventDefault(); recordCurrentOrder(); });
@@ -1299,7 +1314,20 @@
     const sortInput = $(`input[name="menuSortMode"][value="${state.menuSortMode || 'tag'}"]`);
     if (sortInput) sortInput.checked = true;
     renderMenuEditor();
+    showDataPage('home', false);
     $('#dataDialog').showModal();
+  }
+
+  function showDataPage(page, focus = true) {
+    const titles = { home: 'データ管理', cloud: 'クラウド管理', backup: 'バックアップ・復元', import: 'データ取り込み', export: 'データ書き出し' };
+    if (!Object.hasOwn(titles, page)) return;
+    $('#dataManagementHome').hidden = page !== 'home';
+    $$('[data-management-page]').forEach(section => { section.hidden = section.dataset.managementPage !== page; });
+    $('#dataBackButton').hidden = page === 'home';
+    $('#dataPageTitle').textContent = titles[page];
+    if (focus) $('#dataPageTitle').focus();
+    $('#downloadBeforeCloudRestore').hidden = !localStorage.getItem(BEFORE_CLOUD_RESTORE_KEY);
+    if (page === 'cloud' && window.HidakaSupabase?.getStatus?.().authenticated) refreshCloudBackupInfo();
   }
   function menuTagSortKey(item) {
     const tags = (item.tags || []).map(canonicalTag).filter(Boolean);
@@ -1590,27 +1618,132 @@
         '現在の端末データを上書きして復元しますか？'
       ].join('\n');
       if (!confirm(message)) { status.textContent = '復元をキャンセルしました。'; return; }
-      clearPendingReminderTimer();
-      state = backupState;
-      currentOrder = state.pendingOrder?.order || null;
-      getTodayOutOfStockIds();
-      saveState();
-      renderMoodChoices();
-      applyPreferences();
-      renderMenuEditor();
-      renderHistorySummary();
-      if (currentOrder) {
-        renderOrder(currentOrder, false);
-        schedulePendingReminder();
-      } else {
-        $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>つまみの量と食べたいものから、バランスよく選びます。</p></div>';
-      }
+      applyRestoredState(backupState);
       status.textContent = `メニュー ${state.menu.length}品・履歴 ${state.history.length}件を復元しました。`;
     } catch (error) {
       status.textContent = `復元できませんでした: ${error.message}`;
     } finally {
       event.target.value = '';
     }
+  }
+
+  function applyRestoredState(backupState) {
+    // 書込み失敗時に画面内のデータだけ復元後へ変わらないよう、保存を先に行う。
+    const next = JSON.parse(JSON.stringify(backupState));
+    if (next.outOfStock.date !== todayKey()) next.outOfStock = { date: todayKey(), ids: [] };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    clearPendingReminderTimer();
+    state = next;
+    currentOrder = state.pendingOrder?.order || null;
+    renderMoodChoices();
+    applyPreferences();
+    renderMenuEditor();
+    renderHistorySummary();
+    const store = getActiveStore();
+    $('#storeInfo').textContent = `${store.name}（${store.id}）`;
+    if (currentOrder) {
+      renderOrder(currentOrder, false);
+      schedulePendingReminder();
+    } else {
+      $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>つまみの量と食べたいものから、バランスよく選びます。</p></div>';
+    }
+  }
+
+  function backupDateLabel(value) {
+    return Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '日時不明';
+  }
+
+  function backupCountsLabel(data) {
+    const latest = data.history.map(entry => String(entry.date || entry.visitedAt || '').slice(0, 10)).sort().at(-1) || 'なし';
+    return `メニュー ${data.menu.length}品（休止 ${data.menu.filter(item => item.available === false).length}品）・初期メニュー ${data.initialMenu.length}品\n履歴 ${data.history.length}件・最新の注文日 ${latest}\n店舗 ${data.stores.length}件・品切れ ${data.outOfStock.ids.length}品（${data.outOfStock.date}）・未記録注文 ${data.pendingOrder ? 'あり' : 'なし'}`;
+  }
+
+  function setCloudBusy(value) {
+    cloudBusy = value;
+    renderCloudAuthStatus(window.HidakaSupabase?.getStatus?.() || {});
+    $('#confirmCloudRestore').disabled = value;
+    $('#cancelCloudRestore').disabled = value;
+  }
+
+  function renderCloudBackupInfo(info) {
+    $('#cloudBackupTime').textContent = info ? backupDateLabel(info.updated_at) : 'まだバックアップはありません';
+    $('#cloudBackupCounts').textContent = info ? `保存済み: メニュー ${info.menu_count}品・初期メニュー ${info.initial_menu_count}品・履歴 ${info.history_count}件・店舗 ${info.store_count}件・品切れ ${info.stock_count}品` : '「クラウドへバックアップ」でこの端末のデータを保存できます。';
+  }
+
+  async function refreshCloudBackupInfo() {
+    if (cloudBusy || !window.HidakaSupabase?.readBackupInfo) return;
+    setCloudBusy(true);
+    $('#cloudBackupTime').textContent = '確認中…';
+    try {
+      renderCloudBackupInfo(await window.HidakaSupabase.readBackupInfo());
+    } catch (error) {
+      $('#cloudBackupTime').textContent = '確認できませんでした';
+      $('#cloudBackupCounts').textContent = friendlyCloudError(error);
+    } finally { setCloudBusy(false); }
+  }
+
+  async function backupToCloud() {
+    if (cloudBusy || !window.HidakaSupabase?.saveManualBackup) return;
+    setCloudBusy(true);
+    $('#cloudActionStatus').textContent = '現在の端末データをクラウドへバックアップしています…';
+    try {
+      const payload = createFullBackupPayload();
+      normalizeFullBackup(payload); // 壊れたデータでクラウドの正常なバックアップを置換しない。
+      const info = await window.HidakaSupabase.saveManualBackup(payload);
+      renderCloudBackupInfo(info);
+      $('#cloudActionStatus').textContent = 'クラウドへバックアップしました。操作開始時点の全データを保存しました。';
+    } catch (error) {
+      $('#cloudActionStatus').textContent = `バックアップを完了できませんでした: ${friendlyCloudError(error)} 通信が途切れた場合は、件数確認で保存結果を確認してください。自動再送はしません。`;
+    } finally { setCloudBusy(false); }
+  }
+
+  async function previewCloudRestore() {
+    if (cloudBusy || !window.HidakaSupabase?.readBackup) return;
+    preparedCloudRestore = null;
+    setCloudBusy(true);
+    $('#cloudActionStatus').textContent = 'クラウドのバックアップを取得しています（端末データは変更しません）…';
+    try {
+      const info = await window.HidakaSupabase.readBackup();
+      if (!info) { renderCloudBackupInfo(null); $('#cloudActionStatus').textContent = '復元できるクラウドバックアップがまだありません。'; return; }
+      const restored = normalizeFullBackup(info.payload);
+      preparedCloudRestore = { state: restored.state, userId: info.user_id, localState: JSON.stringify(state), localSaved: localStorage.getItem(STORAGE_KEY) };
+      renderCloudBackupInfo(info);
+      $('#cloudRestoreComparison').textContent = `クラウド最終更新: ${backupDateLabel(info.updated_at)}\n元の端末での保存日時: ${backupDateLabel(info.payload.exportedAt)}\n\n【この端末の現在のデータ】\n${backupCountsLabel(state)}\n\n【クラウドから復元するデータ】\n${backupCountsLabel(restored.state)}\n\n設定・タグ・提供期間・感想・更新済み印も含めて上書きします。品切れは当日分のみ有効です。`;
+      $('#cloudRestoreStatus').textContent = '';
+      $('#cloudRestoreDialog').showModal();
+      $('#cancelCloudRestore').focus();
+      $('#cloudActionStatus').textContent = '確認画面を開きました。まだ復元していません。';
+    } catch (error) {
+      preparedCloudRestore = null;
+      $('#cloudActionStatus').textContent = `復元データを取得できませんでした: ${friendlyCloudError(error)}`;
+    } finally { setCloudBusy(false); }
+  }
+
+  async function confirmCloudRestore() {
+    if (cloudBusy || !preparedCloudRestore) return;
+    const prepared = preparedCloudRestore;
+    setCloudBusy(true);
+    try {
+      await window.HidakaSupabase.confirmBackupOwner(prepared.userId);
+      if (JSON.stringify(state) !== prepared.localState || localStorage.getItem(STORAGE_KEY) !== prepared.localSaved) {
+        throw new Error('確認画面を開いた後に端末データが変わりました。キャンセルして、もう一度復元内容を確認してください。');
+      }
+      // 復元操作に伴う端末内の安全コピー。クラウドへは送信しない。
+      localStorage.setItem(BEFORE_CLOUD_RESTORE_KEY, JSON.stringify(createFullBackupPayload()));
+      applyRestoredState(prepared.state);
+      preparedCloudRestore = null;
+      $('#cloudRestoreDialog').close();
+      $('#cloudActionStatus').textContent = 'クラウドから復元しました。復元前のデータは「バックアップ・復元」からJSONで保存できます。';
+    } catch (error) {
+      $('#cloudRestoreStatus').textContent = `復元できませんでした: ${friendlyCloudError(error)}`;
+    } finally { setCloudBusy(false); }
+  }
+
+  function downloadBeforeCloudRestore() {
+    const json = localStorage.getItem(BEFORE_CLOUD_RESTORE_KEY);
+    if (!json) return;
+    download(`日高オーダー_クラウド復元前_${todayKey()}.json`, json, 'application/json;charset=utf-8', false);
+    $('#fullBackupStatus').textContent = 'クラウド復元前の端末データをJSONに保存しました。必要なら「全データを復元」から戻せます。';
   }
 
   function download(filename, content, mimeType = 'text/csv;charset=utf-8', includeBom = true) {
@@ -1631,15 +1764,16 @@
   }
   function downloadCurrentMenuBackup() {
     download(`やきとり日高_メニューバックアップ_${todayKey()}.csv`, buildMenuCsv(state.menu));
-    $('#importStatus').textContent = `現在のメニュー ${state.menu.length}品をCSVに保存しました。`;
+    $('#exportStatus').textContent = `現在のメニュー ${state.menu.length}品をCSVに保存しました。`;
   }
   async function downloadDefaultMenu() {
     try {
       const response = await fetch('./data/hidaka-menu.csv', { cache: 'no-cache' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       download('やきとり日高_メニュー.csv', await response.text());
+      $('#exportStatus').textContent = '基本メニューCSVを保存しました。';
     } catch (error) {
-      $('#importStatus').textContent = `基本メニューCSVを保存できませんでした: ${error.message}`;
+      $('#exportStatus').textContent = `基本メニューCSVを保存できませんでした: ${error.message}`;
     }
   }
   function resetData() {
@@ -1678,14 +1812,14 @@
     const logoutButton = $('#cloudLogoutButton');
     if (!summary || !counts || !loginButton || !verifyButton || !logoutButton) return;
 
-    const isChecking = status.state === 'checking';
+    const isChecking = status.state === 'checking' || cloudBusy;
     const isSignedIn = status.authenticated === true;
     if (isChecking) {
       summary.textContent = 'クラウドを確認しています';
       counts.textContent = '完了までそのままお待ちください。';
     } else if (isSignedIn && status.cloudCounts) {
       summary.textContent = status.userEmail ? `ログイン済み：${status.userEmail}` : '同じ利用者としてログイン済み';
-      counts.textContent = `メニュー ${status.cloudCounts.menuItems}件・来店履歴 ${status.cloudCounts.visits}件・店舗設定 ${status.cloudCounts.storeSettings}件を読み取り確認しました。`;
+      counts.textContent = `連携用データ（バックアップとは別）: メニュー ${status.cloudCounts.menuItems}件・来店履歴 ${status.cloudCounts.visits}件・店舗設定 ${status.cloudCounts.storeSettings}件。`;
     } else if (isSignedIn) {
       summary.textContent = status.userEmail ? `ログイン済み：${status.userEmail}` : 'ログイン済み・読み取りを再確認してください';
       counts.textContent = status.error || 'クラウドデータを読み取れませんでした。';
@@ -1710,6 +1844,14 @@
     verifyButton.disabled = isChecking;
     logoutButton.hidden = !isSignedIn;
     logoutButton.disabled = isChecking;
+    $('#cloudBackupButton').disabled = isChecking || !isSignedIn || !status.manualBackupEnabled;
+    $('#cloudRestoreButton').disabled = isChecking || !isSignedIn;
+    $('#cloudBackupButton').title = status.manualBackupEnabled ? '' : '手動バックアップの接続設定を有効にする必要があります';
+    if (!isSignedIn) {
+      $('#cloudBackupTime').textContent = '未確認（ログインが必要です）';
+      $('#cloudBackupCounts').textContent = 'ログイン後に確認できます。';
+      preparedCloudRestore = null;
+    }
   }
 
   function friendlyCloudError(error) {
@@ -1778,6 +1920,7 @@
       $('#cloudActionStatus').textContent = 'クラウドへログインし、日高のデータを読み取り確認しました。保存先は端末内のままです。';
       $('#cloudLoginForm').reset();
       $('#cloudLoginDialog').close();
+      await refreshCloudBackupInfo();
     } catch (error) {
       setCloudLoginMessage(friendlyCloudError(error));
     } finally {
@@ -1793,6 +1936,7 @@
       const nextStatus = await window.HidakaSupabase.verifyRead();
       renderSupabaseStatus(nextStatus);
       $('#cloudActionStatus').textContent = 'もう一度読み取り確認しました。保存先は端末内のままです。';
+      await refreshCloudBackupInfo();
     } catch (error) {
       $('#cloudActionStatus').textContent = friendlyCloudError(error);
       renderSupabaseStatus(window.HidakaSupabase.getStatus());

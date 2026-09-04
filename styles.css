@@ -35,6 +35,17 @@ dialog { border:0; border-radius:18px; padding:0; width:min(600px,calc(100% - 24
 .cloud-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }
 .cloud-actions .secondary-button { flex:1 1 190px; }
 .cloud-actions .text-button { margin-left:auto; }
+.management-links { display:grid; gap:12px; margin:12px 0 20px; }
+.management-links button { display:flex; justify-content:space-between; align-items:center; gap:12px; width:100%; min-height:54px; padding:15px; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--ink); text-align:left; font-size:15px; font-weight:700; }
+.management-links button:hover { background:#fff7f0; }
+.management-links button:disabled { opacity:.5; cursor:not-allowed; }
+[data-management-page][hidden], #dataManagementHome[hidden], #dataBackButton[hidden], .cloud-actions [hidden], #downloadBeforeCloudRestore[hidden] { display:none; }
+#dataBackButton { margin-bottom:8px; min-height:32px; }
+.backup-comparison { white-space:pre-line; font-size:14px; line-height:1.8; padding:14px; background:#f7f1ea; border-radius:10px; }
+.restore-warning { color:var(--red-dark); font-weight:700; line-height:1.6; }
+#cloudRestoreDialog { padding:22px; }
+#cloudRestoreDialog .primary-button:disabled { opacity:.5; cursor:not-allowed; }
+.management-links button:focus-visible { outline:2px solid var(--red); outline-offset:3px; }
 .cloud-action-status,.cloud-login-status { min-height:19px; margin:8px 0 0!important; color:var(--green)!important; font-size:12px!important; font-weight:700; line-height:1.45; }
 .cloud-login-status { color:var(--red-dark)!important; }
 .cloud-login-status.is-success { color:var(--green)!important; }

@@ -3,6 +3,8 @@
 
   const CONFIG_PATH = './config.local.json';
   const CONNECTION_MODE = 'connection-check-only';
+  const MANUAL_BACKUP_MODE = 'manual-backup';
+  const BACKUP_TABLE = 'hidaka_manual_backups';
   const SESSION_KEY = 'hidaka-order-supabase-session-v1';
   const SESSION_REFRESH_MARGIN_SECONDS = 60;
   let activeConfig = null;
@@ -18,7 +20,7 @@
   };
 
   function updateStatus(next) {
-    status = { ...status, ...next, storageMode: 'local-only' };
+    status = { ...status, ...next, storageMode: 'local-only', manualBackupEnabled: activeConfig?.mode === MANUAL_BACKUP_MODE };
     window.dispatchEvent(new CustomEvent('hidaka:supabase-status', { detail: { ...status } }));
     return { ...status };
   }
@@ -34,7 +36,7 @@
 
   function validateConfig(raw) {
     if (!raw || raw.enabled !== true) return { enabled: false };
-    if (raw.mode !== CONNECTION_MODE) throw new Error('接続確認専用モードではありません。');
+    if (![CONNECTION_MODE, MANUAL_BACKUP_MODE].includes(raw.mode)) throw new Error('未対応のクラウド接続モードです。');
     if (!validSupabaseUrl(raw.supabaseUrl)) throw new Error('Supabase URLが不正です。');
     if (!/^sb_publishable_[A-Za-z0-9_-]+$/.test(String(raw.publishableKey || ''))) {
       throw new Error('公開用接続キーが不正です。');
@@ -46,7 +48,7 @@
     }
     return {
       enabled: true,
-      mode: CONNECTION_MODE,
+      mode: raw.mode,
       supabaseUrl: String(raw.supabaseUrl).replace(/\/$/, ''),
       publishableKey: String(raw.publishableKey),
       appKey: String(raw.appKey),
@@ -218,6 +220,90 @@
       countRows('store_settings', storeFilter, session)
     ]);
     return { menuItems, visits, storeSettings };
+  }
+
+  function assertActiveSession(session) {
+    if (loadSession()?.access_token !== session.access_token) throw new Error('ログイン状態が変わりました。もう一度操作してください。');
+  }
+
+  async function backupContext() {
+    const config = requireConfig();
+    const session = await getFreshSession();
+    if (!session) throw new Error('先にクラウドへログインしてください。');
+    const user = await readAuthenticatedUser(session);
+    if (!user.id || !await verifyStoreLink(session)) throw new Error('このログインでは、やきとり日高のデータを確認できません。');
+    assertActiveSession(session);
+    return { config, session, user };
+  }
+
+  async function backupFetch(path, session, options) {
+    try {
+      return await authenticatedFetch(path, session, options);
+    } catch (error) {
+      if (/PGRST205|42P01|could not find the table.*hidaka_manual_backups|relation .*hidaka_manual_backups.*does not exist/i.test(error.message)) {
+        throw new Error('クラウドのバックアップ保存先が未設定です。専用テーブルの設定後にご利用ください。端末データは変更していません。');
+      }
+      throw error;
+    }
+  }
+
+  function validateBackupRow(row, { config, user }, includePayload) {
+    if (!row || row.user_id !== user.id || row.app_key !== config.appKey || row.store_id !== config.supabaseStoreId
+      || !/^[0-9a-f-]{36}$/i.test(row.backup_id || '') || !Number.isFinite(Date.parse(row.updated_at))) {
+      throw new Error('クラウドバックアップの所有者または日時を確認できません。');
+    }
+    for (const key of ['menu_count', 'initial_menu_count', 'history_count', 'store_count', 'stock_count']) {
+      if (!Number.isInteger(row[key]) || row[key] < 0) throw new Error('クラウドバックアップの件数が不正です。');
+    }
+    if (includePayload) {
+      const data = row.payload?.data;
+      if (row.payload?.format !== 'hidaka-order-full-backup' || row.payload.schemaVersion !== 6 || !data
+        || !Array.isArray(data.menu) || !Array.isArray(data.initialMenu) || !Array.isArray(data.history)
+        || !Array.isArray(data.stores) || !Array.isArray(data.outOfStock?.ids)
+        || data.menu.length !== row.menu_count || data.initialMenu.length !== row.initial_menu_count
+        || data.history.length !== row.history_count || data.stores.length !== row.store_count
+        || data.outOfStock.ids.length !== row.stock_count) throw new Error('クラウドバックアップの内容と件数が一致しません。');
+    }
+    return row;
+  }
+
+  const BACKUP_METADATA = 'user_id,app_key,store_id,backup_id,updated_at,menu_count,initial_menu_count,history_count,store_count,stock_count';
+  async function readManualBackup(includePayload = false) {
+    const context = await backupContext();
+    const { config, session, user } = context;
+    const query = new URLSearchParams({ select: BACKUP_METADATA + (includePayload ? ',payload' : ''), user_id: `eq.${user.id}`, app_key: `eq.${config.appKey}`, store_id: `eq.${config.supabaseStoreId}`, limit: '1' });
+    const response = await backupFetch(`/rest/v1/${BACKUP_TABLE}?${query}`, session, { method: 'GET' });
+    const rows = await response.json();
+    assertActiveSession(session);
+    if (!Array.isArray(rows) || rows.length > 1) throw new Error('バックアップの応答が不正です。');
+    return rows.length ? validateBackupRow(rows[0], context, includePayload) : null;
+  }
+
+  // 呼び出し元は「クラウドへバックアップ」クリック時のみ。再送キューは持たない。
+  async function saveManualBackup(payload) {
+    if (requireConfig().mode !== MANUAL_BACKUP_MODE) throw new Error('手動バックアップの接続設定がまだ有効になっていません。');
+    const frozenPayload = JSON.parse(JSON.stringify(payload));
+    if (frozenPayload?.format !== 'hidaka-order-full-backup' || frozenPayload.schemaVersion !== 6
+      || !Array.isArray(frozenPayload.data?.menu) || !Array.isArray(frozenPayload.data?.history)) throw new Error('完全バックアップの形式を確認できません。');
+    if (new TextEncoder().encode(JSON.stringify(frozenPayload)).length > 8 * 1024 * 1024) throw new Error('バックアップが大きすぎます（上限8MB）。端末JSONバックアップをご利用ください。');
+    const context = await backupContext();
+    const { config, session, user } = context;
+    const backupId = crypto.randomUUID();
+    const query = new URLSearchParams({ on_conflict: 'user_id,app_key,store_id', select: BACKUP_METADATA });
+    const response = await backupFetch(`/rest/v1/${BACKUP_TABLE}?${query}`, session, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify({ user_id: user.id, app_key: config.appKey, store_id: config.supabaseStoreId, backup_id: backupId, payload: frozenPayload })
+    });
+    const rows = await response.json();
+    assertActiveSession(session);
+    if (!Array.isArray(rows) || rows.length !== 1 || rows[0].backup_id !== backupId) throw new Error('保存結果を確認できません。件数確認で最新バックアップを確認してください。');
+    return validateBackupRow(rows[0], context, false);
+  }
+
+  async function confirmBackupOwner(userId) {
+    const { user } = await backupContext();
+    if (user.id !== userId) throw new Error('確認画面を開いた時と利用者が異なります。もう一度復元を選んでください。');
   }
 
   async function verifyRead() {
@@ -436,6 +522,10 @@
     verifyMagicLink,
     signOut,
     verifyRead,
+    readBackupInfo: () => readManualBackup(false),
+    readBackup: () => readManualBackup(true),
+    saveManualBackup,
+    confirmBackupOwner,
     getStatus: () => ({ ...status })
   };
 })();
