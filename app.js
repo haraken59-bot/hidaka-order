@@ -6,7 +6,7 @@
   const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
   const DATA_SCHEMA_VERSION = 6;
-  const APP_VERSION = '1.16.0';
+  const APP_VERSION = '1.16.1';
   const BEFORE_CLOUD_RESTORE_KEY = 'hidaka-order-before-cloud-restore-v1';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-09-04-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-04';
@@ -36,6 +36,7 @@
   const HUNGER_LABEL = { light: '軽め', normal: '普通' };
   const HUNGER_DISH_COUNT = { light: 1, normal: 2 };
   const FIXED_SKEWER_COUNT = 5;
+  const SKEWER_MAIN_TAGS = Object.freeze(['chicken', 'pork', 'beef', 'vegetable', 'seafood']);
   const MENU_CORRECTION_ID = 'confirmed-skewer-tags-2026-09-04-v1';
   // 原材料は利用者に一品ずつ確認済み。牛さがりは内臓系に含めない。
   const CONFIRMED_SKEWER_CORRECTIONS = [
@@ -211,6 +212,23 @@
   function canonicalTag(tag) { return TAG_CANONICAL[String(tag || '').trim().toLowerCase()] || String(tag || '').trim().toLowerCase(); }
   function localizeTag(tag) { const original = String(tag || '').trim(); return TAG_LABEL[canonicalTag(original)] || original; }
   function hasTag(item, target) { return item.tags.some(tag => canonicalTag(tag) === canonicalTag(target)); }
+  function skewerBalancePenalty(item, selectedItems) {
+    if (item?.category !== 'skewer') return 0;
+    const selectedSkewers = selectedItems.filter(selected => selected.category === 'skewer');
+    const mostSelectedMainTagCount = SKEWER_MAIN_TAGS
+      .filter(tag => hasTag(item, tag))
+      .reduce((highest, tag) => Math.max(highest, selectedSkewers.filter(selected => hasTag(selected, tag)).length), 0);
+    const mainTagPenalty = mostSelectedMainTagCount >= 3 ? 4 : (mostSelectedMainTagCount >= 2 ? 2 : 0);
+    const selectedOffalCount = selectedSkewers.filter(selected => hasTag(selected, 'offal')).length;
+    const offalPenalty = hasTag(item, 'offal') && selectedOffalCount >= 2 ? 2 : 0;
+    return mainTagPenalty + offalPenalty;
+  }
+  function rankOrderCandidates(options, score) {
+    return options
+      .map((item, index) => ({ item, index, value: score(item) + Math.random() * 0.8 }))
+      .sort((a, b) => b.value - a.value || a.index - b.index)
+      .map(candidate => candidate.item);
+  }
   function isMenuManuallyAvailable(item) { return item?.available !== false; }
   function isMenuWithinOfferingPeriod(item, date = todayKey()) {
     if (item?.availableFrom && date < item.availableFrom) return false;
@@ -786,10 +804,12 @@
     const recent = recentOrderStats();
     const candidates = (category) => state.menu.filter(item => isMenuAvailable(item) && (!category || item.category === category) && !excluded.has(String(item.id))).filter(item => !selected.some(choice => choice.name === item.name));
     const score = (item, kind) => {
-      let value = Math.random() * 0.8;
+      let value = 0;
       if (p.moods.some(tag => hasTag(item, tag))) value += 5;
       value -= recent.penalty(item);
-      return value - item.price / 12000;
+      if (kind === 'skewer') value -= skewerBalancePenalty(item, selected);
+      value -= item.price / 12000;
+      return value;
     };
     const reasonFor = (item, kind) => {
       if (!item) return '';
@@ -805,7 +825,7 @@
     const choose = (category, kind, allowRecent = false) => {
       let options = candidates(category);
       if (!allowRecent) options = recent.preferNotLatest(options);
-      return options.sort((a, b) => score(b, kind) - score(a, kind))[0];
+      return rankOrderCandidates(options, item => score(item, kind))[0];
     };
 
     const unavailable = [];
@@ -834,7 +854,7 @@
     while (selectedDishCount() < dishTarget) {
       let dishOptions = candidates('small');
       dishOptions = recent.preferNotLatest(dishOptions);
-      const dish = dishOptions.sort((a, b) => score(b, 'dish') - score(a, 'dish'))[0];
+      const dish = rankOrderCandidates(dishOptions, item => score(item, 'dish'))[0];
       if (!dish) break;
       const baseReason = reasonFor(dish, 'dish');
       add(dish, `${baseReason}／つまみの量「${HUNGER_LABEL[p.hunger] || HUNGER_LABEL.normal}」に合わせたつまみ・小鉢 ${dishTarget}品のうちの1品`);
