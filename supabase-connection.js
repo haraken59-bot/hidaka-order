@@ -222,6 +222,83 @@
     return { menuItems, visits, storeSettings };
   }
 
+  function validUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+  }
+
+  function normalizedDate(value) {
+    const text = String(value || '');
+    if (!/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(text) || !Number.isFinite(Date.parse(text))) return '';
+    return text.slice(0, 10);
+  }
+
+  function normalizeShochuBottle(row, expectedStoreId) {
+    if (!row || !validUuid(row.id) || row.store_id !== expectedStoreId || row.status !== 'active') {
+      throw new Error('焼酎キープ情報の店舗または状態を確認できません。');
+    }
+    const brand = String(row.brand || '').trim();
+    const remaining = Number(row.current_remaining);
+    const keptAt = normalizedDate(row.kept_at);
+    if (!brand || !Number.isInteger(remaining) || remaining <= 0 || remaining > 100 || !keptAt) {
+      throw new Error('焼酎キープ情報の内容を確認できません。');
+    }
+    return { id: row.id, storeId: row.store_id, brand, remaining, keptAt, status: row.status };
+  }
+
+  // 焼酎キープ帖の既存RPCとテーブルを参照するだけで、更新系の要求は送らない。
+  async function readShochuKeepStatus() {
+    const config = requireConfig();
+    const session = await getFreshSession();
+    if (!session) throw new Error('先にクラウドへログインしてください。');
+    const user = await readAuthenticatedUser(session);
+    if (!user.id || !await verifyStoreLink(session)) throw new Error('このログインでは、やきとり日高のデータを確認できません。');
+
+    const storeQuery = new URLSearchParams({ select: 'id,name', id: `eq.${config.supabaseStoreId}`, limit: '1' });
+    const bottleQuery = new URLSearchParams({
+      select: 'id,store_id,brand,current_remaining,kept_at,status',
+      store_id: `eq.${config.supabaseStoreId}`,
+      status: 'eq.active',
+      current_remaining: 'gt.0',
+      order: 'kept_at.desc'
+    });
+    const [storeResponse, referenceResponse, bottleResponse] = await Promise.all([
+      authenticatedFetch(`/rest/v1/stores?${storeQuery}`, session, { method: 'GET' }),
+      authenticatedFetch('/rest/v1/rpc/get_shochu_keep_reference', session, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_include_finished: false })
+      }),
+      authenticatedFetch(`/rest/v1/bottles?${bottleQuery}`, session, { method: 'GET' })
+    ]);
+    const [stores, referenceRows, bottleRows] = await Promise.all([
+      storeResponse.json(),
+      referenceResponse.json(),
+      bottleResponse.json()
+    ]);
+    assertActiveSession(session);
+    if (!Array.isArray(stores) || stores.length !== 1 || stores[0].id !== config.supabaseStoreId || !String(stores[0].name || '').trim()) {
+      throw new Error('焼酎キープ帖の店舗情報を確認できません。');
+    }
+    if (!Array.isArray(referenceRows) || !Array.isArray(bottleRows)) throw new Error('焼酎キープ情報の応答が不正です。');
+
+    const references = new Map(referenceRows
+      .filter(row => row?.store_id === config.supabaseStoreId)
+      .map(row => [row.bottle_id, row]));
+    const bottles = bottleRows.map(row => normalizeShochuBottle(row, config.supabaseStoreId));
+    for (const bottle of bottles) {
+      const reference = references.get(bottle.id);
+      if (!reference || reference.status !== 'active' || String(reference.brand || '').trim() !== bottle.brand
+        || Number(reference.remaining_percent) !== bottle.remaining) {
+        throw new Error('焼酎キープ帖の参照結果と現在ボトルが一致しません。もう一度お試しください。');
+      }
+    }
+    if (references.size !== bottles.length) {
+      throw new Error('焼酎キープ帖の参照結果が更新中です。もう一度お試しください。');
+    }
+    bottles.sort((left, right) => right.keptAt.localeCompare(left.keptAt) || left.brand.localeCompare(right.brand, 'ja'));
+    return { storeId: config.supabaseStoreId, storeName: String(stores[0].name).trim(), bottles };
+  }
+
   function assertActiveSession(session) {
     if (loadSession()?.access_token !== session.access_token) throw new Error('ログイン状態が変わりました。もう一度操作してください。');
   }
@@ -524,6 +601,7 @@
     verifyRead,
     readBackupInfo: () => readManualBackup(false),
     readBackup: () => readManualBackup(true),
+    readShochuKeepStatus,
     saveManualBackup,
     confirmBackupOwner,
     getStatus: () => ({ ...status })

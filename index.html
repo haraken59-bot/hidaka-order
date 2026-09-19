@@ -38,19 +38,25 @@
       </section>
 
       <form id="preferenceForm" class="panel preferences">
-        <fieldset class="field-group">
+        <fieldset class="field-group compact-hunger-section">
           <legend>つまみの量</legend>
           <div class="hunger-choice-grid" id="hungerChoices">
-            <label class="hunger-choice-card"><input type="radio" name="hunger" value="light" /><span><strong>軽め</strong><small>つまみ・小鉢</small><b>1品</b></span></label>
-            <label class="hunger-choice-card"><input type="radio" name="hunger" value="normal" checked /><span><strong>普通</strong><small>つまみ・小鉢</small><b>2品</b></span></label>
+            <label class="hunger-choice-card"><input type="radio" name="hunger" value="light" /><span><strong>軽め</strong><b>1品</b></span></label>
+            <label class="hunger-choice-card"><input type="radio" name="hunger" value="normal" checked /><span><strong>普通</strong><b>2品</b></span></label>
           </div>
-          <p class="field-help hunger-help">つまみ・小鉢だけの品数です。串はししとうを含む5本固定です。</p>
+          <p class="field-help hunger-help">つまみ・小鉢の品数です。串は5本固定です。</p>
         </fieldset>
 
         <fieldset class="field-group">
           <legend>最初の飲み物</legend>
           <select id="drink" class="drink-select" aria-label="最初の飲み物を選ぶ"></select>
-          <p class="field-help">焼酎キープの割代 ¥220 は毎回、注文の最後に固定で加算されます。</p>
+        </fieldset>
+
+        <fieldset class="field-group shochu-keep-section">
+          <legend>焼酎キープ状況</legend>
+          <div id="shochuKeepStatus" class="shochu-keep-card is-loading" aria-live="polite" aria-busy="true">
+            <p>キープ情報を確認しています。</p>
+          </div>
         </fieldset>
 
         <fieldset class="field-group">
@@ -65,12 +71,12 @@
               <p>候補を準備しています。</p>
             </div>
             <label class="toggle featured-dish-toggle">
-              <strong>この一品を注文に入れる</strong>
+              <strong>入れる</strong>
               <input id="includeFeaturedDish" type="checkbox" disabled />
               <span aria-hidden="true"></span>
             </label>
           </div>
-          <p class="field-help">直近3回来店で頼んだ一品料理をなるべく避けて選びます。</p>
+          <p class="field-help">直近3回の注文をなるべく避けます。</p>
         </fieldset>
 
         <button class="primary-button" id="createOrderButton" type="submit">この条件で注文を考える <span>→</span></button>

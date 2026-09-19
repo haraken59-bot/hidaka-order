@@ -6,7 +6,7 @@
   const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
   const DATA_SCHEMA_VERSION = 6;
-  const APP_VERSION = '1.16.1';
+  const APP_VERSION = '1.17.0';
   const BEFORE_CLOUD_RESTORE_KEY = 'hidaka-order-before-cloud-restore-v1';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-09-04-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-04';
@@ -101,6 +101,7 @@
   let cloudBusy = false;
   let preparedCloudRestore = null;
   let pendingReminderTimer = null;
+  let shochuKeepRequestId = 0;
 
   const $ = (selector, parent = document) => parent.querySelector(selector);
   const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
@@ -526,7 +527,10 @@
       state.preferences.includeFeaturedDish = event.currentTarget.checked;
       saveState();
     });
-    window.addEventListener('hidaka:supabase-status', event => renderSupabaseStatus(event.detail));
+    window.addEventListener('hidaka:supabase-status', event => {
+      renderSupabaseStatus(event.detail);
+      void refreshShochuKeepStatus(event.detail);
+    });
     $('#cloudLoginButton').addEventListener('click', openCloudLoginDialog);
     $('#cloudLoginForm').addEventListener('submit', submitCloudLogin);
     $('#verifyCloudMagicLink').addEventListener('click', verifyCloudMagicLink);
@@ -695,8 +699,8 @@
     toggle.checked = state.preferences.includeFeaturedDish;
     toggle.disabled = false;
     const offeringLabel = OFFERING_TYPE_LABEL[candidate.offeringType];
-    const detail = `${CATEGORY_LABEL[candidate.category]}${offeringLabel && candidate.offeringType !== 'regular' ? `・${offeringLabel}` : ''}`;
-    container.innerHTML = `<div><strong>${escapeHtml(candidate.name)}</strong><small>${escapeHtml(detail)}</small></div><b>${yen(candidate.price)}</b>`;
+    const detail = offeringLabel && candidate.offeringType !== 'regular' ? `<small>${escapeHtml(offeringLabel)}</small>` : '';
+    container.innerHTML = `<div><strong>${escapeHtml(candidate.name)}</strong>${detail}</div><b>${yen(candidate.price)}</b>`;
     saveState();
   }
 
@@ -1824,6 +1828,81 @@
     renderCloudAuthStatus(status || {});
   }
 
+  function shochuKeepMessage(message, state = 'idle', title = '') {
+    const container = $('#shochuKeepStatus');
+    if (!container) return;
+    const paragraph = document.createElement('p');
+    paragraph.textContent = message;
+    container.replaceChildren(paragraph);
+    container.className = `shochu-keep-card is-${state}`;
+    container.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+    container.title = title;
+  }
+
+  function formatShochuDate(value) {
+    const parts = String(value || '').split('-');
+    return parts.length === 3 ? `${parts[0]}/${Number(parts[1])}/${Number(parts[2])}` : String(value || '不明');
+  }
+
+  function renderShochuKeepStatus(result) {
+    const container = $('#shochuKeepStatus');
+    if (!container) return;
+    const bottles = Array.isArray(result?.bottles) ? result.bottles : [];
+    if (!bottles.length) {
+      shochuKeepMessage(`現在キープなし・割代 ${yen(KEEP_SHOCHU_FEE.price)}（固定）`, 'empty');
+      return;
+    }
+    const summary = bottles.length > 1 ? document.createElement('p') : null;
+    if (summary) summary.textContent = `キープ中 ${bottles.length}本`;
+    const list = document.createElement('div');
+    list.className = 'shochu-keep-bottle-list';
+    for (const bottle of bottles) {
+      const card = document.createElement('article');
+      card.className = 'shochu-keep-bottle';
+      const brand = document.createElement('strong');
+      brand.textContent = bottle.brand;
+      const remaining = document.createElement('span');
+      remaining.className = 'shochu-remaining';
+      remaining.textContent = `残量 約${bottle.remaining}%`;
+      const started = document.createElement('small');
+      started.textContent = `開始 ${formatShochuDate(bottle.keptAt)}`;
+      const fee = document.createElement('small');
+      fee.className = 'shochu-fee';
+      fee.textContent = `割代 ${yen(KEEP_SHOCHU_FEE.price)}（固定）`;
+      card.append(brand, remaining, started, fee);
+      list.append(card);
+    }
+    container.replaceChildren(...(summary ? [summary, list] : [list]));
+    container.className = 'shochu-keep-card is-success';
+    container.setAttribute('aria-busy', 'false');
+    container.title = `${result.storeName || 'やきとり日高'}の読み取り専用情報です。`;
+  }
+
+  async function refreshShochuKeepStatus(status = window.HidakaSupabase?.getStatus?.() || {}) {
+    const requestId = ++shochuKeepRequestId;
+    if (status.state === 'checking') {
+      shochuKeepMessage(`キープ確認中…・割代 ${yen(KEEP_SHOCHU_FEE.price)}`, 'loading');
+      return;
+    }
+    if (status.authenticated !== true) {
+      shochuKeepMessage(`ログインすると確認できます・割代 ${yen(KEEP_SHOCHU_FEE.price)}`, 'logged-out');
+      return;
+    }
+    if (!window.HidakaSupabase?.readShochuKeepStatus) {
+      shochuKeepMessage('焼酎キープ情報を取得できません。注文機能はそのまま利用できます。', 'error');
+      return;
+    }
+    shochuKeepMessage(`キープ確認中…・割代 ${yen(KEEP_SHOCHU_FEE.price)}`, 'loading');
+    try {
+      const result = await window.HidakaSupabase.readShochuKeepStatus();
+      if (requestId !== shochuKeepRequestId) return;
+      renderShochuKeepStatus(result);
+    } catch (error) {
+      if (requestId !== shochuKeepRequestId) return;
+      shochuKeepMessage('焼酎キープ情報を取得できません。注文機能はそのまま利用できます。', 'error', friendlyCloudError(error));
+    }
+  }
+
   function renderCloudAuthStatus(status) {
     const summary = $('#cloudAuthSummary');
     const counts = $('#cloudDataCounts');
@@ -1977,7 +2056,9 @@
 
   async function initializeSupabaseStatus() {
     if (!window.HidakaSupabase?.initialize) {
-      renderSupabaseStatus({ state: 'not-configured', label: '未設定（保存は端末）' });
+      const nextStatus = { state: 'not-configured', label: '未設定（保存は端末）' };
+      renderSupabaseStatus(nextStatus);
+      await refreshShochuKeepStatus(nextStatus);
       return;
     }
     renderSupabaseStatus({ state: 'checking', label: '確認中（保存は端末）' });
