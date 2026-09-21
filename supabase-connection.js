@@ -177,7 +177,7 @@
         ...(options.headers || {})
       }
     });
-    if (!response.ok) throw await responseError(response, `クラウドデータを読み取れません（HTTP ${response.status}）。`);
+    if (!response.ok) throw await responseError(response, `クラウドデータを処理できません（HTTP ${response.status}）。`);
     return response;
   }
 
@@ -245,7 +245,7 @@
     return { id: row.id, storeId: row.store_id, brand, remaining, keptAt, status: row.status };
   }
 
-  // 焼酎キープ帖の既存RPCとテーブルを参照するだけで、更新系の要求は送らない。
+  // 焼酎キープ帖の既存RPCとテーブルを参照する。
   async function readShochuKeepStatus() {
     const config = requireConfig();
     const session = await getFreshSession();
@@ -297,6 +297,58 @@
     }
     bottles.sort((left, right) => right.keptAt.localeCompare(left.keptAt) || left.brand.localeCompare(right.brand, 'ja'));
     return { storeId: config.supabaseStoreId, storeName: String(stores[0].name).trim(), bottles };
+  }
+
+  function todayLocalDate() {
+    return new Intl.DateTimeFormat('sv-SE').format(new Date());
+  }
+
+  async function updateShochuKeepRemaining(bottleId, newRemaining) {
+    const config = requireConfig();
+    const session = await getFreshSession();
+    if (!session) throw new Error('先にクラウドへログインしてください。');
+    const normalizedBottleId = String(bottleId || '');
+    const remaining = Number(newRemaining);
+    if (!validUuid(normalizedBottleId)) throw new Error('更新するボトルを確認できません。');
+    if (!Number.isInteger(remaining) || remaining < 0 || remaining > 100) throw new Error('残量は0〜100%で指定してください。');
+    const user = await readAuthenticatedUser(session);
+    if (!user.id || !await verifyStoreLink(session)) throw new Error('このログインでは、やきとり日高のデータを確認できません。');
+
+    const bottleQuery = new URLSearchParams({
+      select: 'id,store_id,current_remaining,status',
+      id: `eq.${normalizedBottleId}`,
+      store_id: `eq.${config.supabaseStoreId}`,
+      status: 'eq.active',
+      limit: '1'
+    });
+    const bottleResponse = await authenticatedFetch(`/rest/v1/bottles?${bottleQuery}`, session, { method: 'GET' });
+    const bottleRows = await bottleResponse.json();
+    assertActiveSession(session);
+    if (!Array.isArray(bottleRows) || bottleRows.length !== 1 || bottleRows[0].id !== normalizedBottleId) {
+      throw new Error('現在使用中のボトルを確認できません。情報を再読み込みしてください。');
+    }
+    if (Number(bottleRows[0].current_remaining) === remaining) return readShochuKeepStatus();
+
+    await authenticatedFetch('/rest/v1/rpc/update_bottle_remaining', session, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        p_bottle_id: normalizedBottleId,
+        p_new_remaining: remaining,
+        p_notes: '日高オーダーから更新',
+        p_image_path: null,
+        p_visited_on: todayLocalDate()
+      })
+    });
+    assertActiveSession(session);
+    const refreshed = await readShochuKeepStatus();
+    if (remaining > 0 && !refreshed.bottles.some(bottle => bottle.id === normalizedBottleId && bottle.remaining === remaining)) {
+      throw new Error('保存後の残量を確認できませんでした。もう一度情報を確認してください。');
+    }
+    if (remaining === 0 && refreshed.bottles.some(bottle => bottle.id === normalizedBottleId)) {
+      throw new Error('飲み切り後の状態を確認できませんでした。もう一度情報を確認してください。');
+    }
+    return refreshed;
   }
 
   function assertActiveSession(session) {
@@ -602,6 +654,7 @@
     readBackupInfo: () => readManualBackup(false),
     readBackup: () => readManualBackup(true),
     readShochuKeepStatus,
+    updateShochuKeepRemaining,
     saveManualBackup,
     confirmBackupOwner,
     getStatus: () => ({ ...status })

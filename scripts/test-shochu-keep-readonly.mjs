@@ -9,9 +9,11 @@ const otherStoreId = '8564e9a8-4e84-42df-a3a2-d462075c571c';
 const bottleA = 'a8df5c2b-fce7-4233-b1b0-ff0d2b55ac92';
 const bottleB = 'bf4cfa04-3202-43f3-a48a-6f4b030bfbde';
 
-function createHarness({ referenceRows = [], bottleRows = [], failRpc = false } = {}) {
+function createHarness({ referenceRows = [], bottleRows = [], failRpc = false, failUpdate = false } = {}) {
   const calls = [];
   const stored = new Map();
+  const activeReferenceRows = referenceRows.map(row => ({ ...row }));
+  const activeBottleRows = bottleRows.map(row => ({ ...row }));
   const initialUrl = new URL('http://127.0.0.1:8135/#access_token=access-token&refresh_token=refresh-token&expires_in=3600');
   const location = { href: initialUrl.href, protocol: initialUrl.protocol, pathname: initialUrl.pathname, search: initialUrl.search, hash: initialUrl.hash };
 
@@ -44,11 +46,37 @@ function createHarness({ referenceRows = [], bottleRows = [], failRpc = false } 
     if (String(url).includes('/rest/v1/visits')) return response([], { headers: { 'content-range': '0-0/7' } });
     if (String(url).includes('/rest/v1/store_settings')) return response([], { headers: { 'content-range': '0-0/1' } });
     if (String(url).includes('/rest/v1/stores?')) return response([{ id: storeId, name: 'やきとり日高' }]);
+    if (String(url).includes('/rest/v1/rpc/update_bottle_remaining')) {
+      if (failUpdate) throw new Error('NetworkError');
+      const body = JSON.parse(options.body || '{}');
+      const bottle = activeBottleRows.find(row => row.id === body.p_bottle_id);
+      const reference = activeReferenceRows.find(row => row.bottle_id === body.p_bottle_id);
+      if (bottle) {
+        bottle.current_remaining = Number(body.p_new_remaining);
+        bottle.status = Number(body.p_new_remaining) > 0 ? 'active' : 'finished';
+      }
+      if (reference) {
+        reference.remaining_percent = Number(body.p_new_remaining);
+        reference.status = Number(body.p_new_remaining) > 0 ? 'active' : 'finished';
+      }
+      return response(null);
+    }
     if (String(url).includes('/rest/v1/rpc/get_shochu_keep_reference')) {
       if (failRpc) throw new Error('NetworkError');
-      return response(referenceRows);
+      return response(activeReferenceRows.filter(row => row.status === 'active' && Number(row.remaining_percent) > 0));
     }
-    if (String(url).includes('/rest/v1/bottles?')) return response(bottleRows);
+    if (String(url).includes('/rest/v1/bottles?')) {
+      const params = new URL(String(url)).searchParams;
+      let rows = activeBottleRows;
+      const id = String(params.get('id') || '').replace(/^eq\./, '');
+      const store = String(params.get('store_id') || '').replace(/^eq\./, '');
+      const status = String(params.get('status') || '').replace(/^eq\./, '');
+      if (id) rows = rows.filter(row => row.id === id);
+      if (store) rows = rows.filter(row => row.store_id === store);
+      if (status) rows = rows.filter(row => row.status === status);
+      if (params.get('current_remaining') === 'gt.0') rows = rows.filter(row => Number(row.current_remaining) > 0);
+      return response(rows.map(row => ({ ...row })));
+    }
     throw new Error(`Unexpected fetch: ${method} ${url}`);
   }
 
@@ -123,6 +151,32 @@ assert.equal(bottleUrl.searchParams.get('current_remaining'), 'gt.0');
 const nonReadCalls = harness.calls.filter(call => !['GET', 'HEAD'].includes(call.method));
 assert.deepEqual(nonReadCalls.map(call => new URL(call.url).pathname), ['/rest/v1/rpc/get_shochu_keep_reference'], 'only the established read-only RPC may use POST');
 
+const updatedResult = await harness.window.HidakaSupabase.updateShochuKeepRemaining(bottleB, 65);
+assert.equal(updatedResult.bottles.find(bottle => bottle.id === bottleB)?.remaining, 65);
+assert.equal(updatedResult.bottles.find(bottle => bottle.id === bottleA)?.remaining, 45, 'other bottles must remain unchanged');
+const updateCall = harness.calls.find(call => call.url.includes('/rpc/update_bottle_remaining'));
+assert.ok(updateCall, 'the established update_bottle_remaining RPC must be used');
+assert.equal(updateCall.method, 'POST');
+const updateBody = JSON.parse(updateCall.body);
+assert.deepEqual({
+  p_bottle_id: updateBody.p_bottle_id,
+  p_new_remaining: updateBody.p_new_remaining,
+  p_notes: updateBody.p_notes,
+  p_image_path: updateBody.p_image_path
+}, {
+  p_bottle_id: bottleB,
+  p_new_remaining: 65,
+  p_notes: '日高オーダーから更新',
+  p_image_path: null
+});
+assert.match(updateBody.p_visited_on, /^\d{4}-\d{2}-\d{2}$/);
+await assert.rejects(() => harness.window.HidakaSupabase.updateShochuKeepRemaining(bottleB, 101), /0〜100%/);
+
+const updateFailureHarness = createHarness({ referenceRows, bottleRows, failUpdate: true });
+await updateFailureHarness.window.HidakaSupabase.initialize();
+await assert.rejects(() => updateFailureHarness.window.HidakaSupabase.updateShochuKeepRemaining(bottleB, 60), /NetworkError/);
+assert.equal((await updateFailureHarness.window.HidakaSupabase.readShochuKeepStatus()).bottles.find(bottle => bottle.id === bottleB)?.remaining, 70, 'failed updates must not change the displayed source value');
+
 const emptyHarness = createHarness({ referenceRows: [], bottleRows: [] });
 await emptyHarness.window.HidakaSupabase.initialize();
 assert.deepEqual(JSON.parse(JSON.stringify(await emptyHarness.window.HidakaSupabase.readShochuKeepStatus())).bottles, []);
@@ -150,6 +204,7 @@ class TestElement {
     this.textContent = '';
     this.className = '';
     this.attributes = {};
+    this.dataset = {};
     this.title = '';
   }
   append(...children) { this.children.push(...children); }
@@ -183,10 +238,11 @@ assert.equal(renderedBottles[0].children[0].textContent, '白岳しろ');
 assert.equal(renderedBottles[0].children[1].textContent, '残量 約70%');
 assert.equal(renderedBottles[0].children[2].textContent, '開始 2026/9/10');
 assert.equal(renderedBottles[0].children[3].textContent, '割代 ¥220（固定）');
+assert.equal(renderedBottles[0].children[4].children[0].textContent, '残量を変更');
 uiContext.renderShochuKeepStatus({ storeName: 'やきとり日高', bottles: [] });
 assert.equal(keepContainer.children[0].textContent, '現在キープなし・割代 ¥220（固定）');
 
 const indexSource = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 assert.equal(indexSource.includes('焼酎キープの割代 ¥220 は毎回'), false, 'the drink field must not repeat the keep fee');
 
-console.log('Shochu keep read-only integration checks passed.');
+console.log('Shochu keep read and manual remaining update checks passed.');

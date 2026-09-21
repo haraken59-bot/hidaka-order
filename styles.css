@@ -30,6 +30,16 @@ dialog { border:0; border-radius:18px; padding:0; width:min(600px,calc(100% - 24
 .shochu-keep-bottle .shochu-remaining { grid-column:2; grid-row:1; color:var(--red-dark); font-size:13px; font-weight:800; white-space:nowrap; }
 .shochu-keep-bottle small { color:var(--muted); font-size:11px; line-height:1.5; }
 .shochu-keep-bottle .shochu-fee { grid-column:2; text-align:right; white-space:nowrap; }
+.shochu-keep-actions { grid-column:1 / -1; display:flex; justify-content:flex-end; margin-top:3px; }
+.shochu-keep-actions > button, .shochu-remaining-buttons button { min-height:30px; padding:5px 10px; border:1px solid #b9d4c3; border-radius:7px; color:#246344; background:#fff; font-size:11px; font-weight:800; }
+.shochu-keep-actions button:disabled { cursor:not-allowed; opacity:.55; }
+.shochu-remaining-editor { display:grid; grid-template-columns:auto minmax(110px,1fr); align-items:center; gap:5px 9px; width:100%; }
+.shochu-remaining-editor input[type="range"] { width:100%; margin:0; accent-color:var(--red); }
+.shochu-remaining-value { color:var(--red-dark); font-size:13px; font-weight:800; }
+.shochu-remaining-buttons { grid-column:1 / -1; display:flex; justify-content:flex-end; gap:6px; }
+.shochu-keep-notice { margin:0; padding-top:2px; font-weight:800; }
+.shochu-keep-notice.is-success { color:#246344; }
+.shochu-keep-notice.is-error { color:var(--red-dark); }
 .danger-zone .secondary-button { width:100%; margin:2px 0 8px; }
 .initial-data-status { min-height:19px; margin:0 0 10px!important; color:var(--green)!important; font-size:12px!important; font-weight:700; }
 .app-version-info { display:flex; flex-wrap:wrap; justify-content:center; gap:5px 16px; padding:2px 0 4px; color:var(--muted); font-size:11px; }

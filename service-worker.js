@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hidaka-order-pwa-v36';
+const CACHE_NAME = 'hidaka-order-pwa-v37';
 const APP_ASSETS = [
   './',
   './index.html',

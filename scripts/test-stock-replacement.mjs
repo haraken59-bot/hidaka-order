@@ -92,6 +92,25 @@ assert.equal(removed.items.map(item => item.id).join(','), 'drink,small,fee');
 assert.equal(removed.total, 920);
 assert.match(removed.unavailable.join('\n'), /この品だけ外しました/);
 
+const retainedShishito = { id: 'retained-shishito', name: 'ししとう', price: 180, category: 'skewer', tags: ['野菜'], actual: true };
+const retainedChicken1 = { id: 'retained-chicken-1', name: '残す鶏串1', price: 200, category: 'skewer', tags: ['鶏'], actual: true };
+const retainedChicken2 = { id: 'retained-chicken-2', name: '残す鶏串2', price: 200, category: 'skewer', tags: ['鶏'], actual: true };
+const replacementChicken = { id: 'replacement-chicken', name: '候補の鶏串', price: 200, category: 'skewer', tags: ['鶏'], actual: true };
+const replacementBeef = { id: 'replacement-beef', name: '候補の牛串', price: 200, category: 'skewer', tags: ['牛'], actual: true };
+const balanceOrder = {
+  ...originalOrder,
+  items: [retainedShishito, retainedChicken1, soldOut, retainedChicken2, fee],
+  total: 1000
+};
+test.setState({ menu: [retainedShishito, retainedChicken1, retainedChicken2, soldOut, replacementChicken, replacementBeef], history: [] });
+context.randomCalls = 0;
+vm.runInContext('Math.random = () => { globalThis.randomCalls += 1; return 0; };', context);
+const balancedReplacement = test.replaceOutOfStockItems(balanceOrder, ['sold-out'], ['sold-out']);
+assert.equal(balancedReplacement.items.some(item => item.id === replacementBeef.id), true, '残る鶏2本を数え、同系統3本目を軽く減点する');
+assert.equal(balancedReplacement.items.some(item => item.id === replacementChicken.id), false);
+assert.equal(balancedReplacement.items.filter(item => [retainedShishito.id, retainedChicken1.id, retainedChicken2.id].includes(item.id)).length, 3, '品切れでない串は維持する');
+assert.equal(context.randomCalls, 2, '差し替え候補ごとに乱数を1回だけ生成する');
+
 const manuallyAdded = { id: 'manual', name: '手動追加料理', price: 500, category: 'main', tags: [], actual: true, manuallyAdded: true };
 const manualReplacement = { id: 'manual-replacement', name: '自分で選んだ料理', price: 450, category: 'main', tags: ['魚介'], actual: true };
 const manuallyChangedOrder = test.replaceOrderItemManually(originalOrder, 1, manualReplacement, '今回は気分ではない');
@@ -446,4 +465,4 @@ assert.equal(restoredLegacyBackup.state.menuSortMode, 'tag');
 assert.throws(() => test.normalizeFullBackup({ format: 'unknown', schemaVersion: 1, data: {} }), /完全バックアップではありません/);
 assert.throws(() => test.normalizeFullBackup({ ...fullBackup, schemaVersion: 7 }), /未対応/);
 
-console.log('履歴構造、注文時状況、満足度・フィードバック、季節・期間限定、旧履歴移行、店舗ID、提供休止、品切れ置換、手動変更、注文条件、未記録注文、完全バックアップを確認しました。');
+console.log('履歴構造、注文時状況、満足度・フィードバック、季節・期間限定、旧履歴移行、店舗ID、提供休止、品切れ置換（系統減点・固定乱数を含む）、手動変更、注文条件、未記録注文、完全バックアップを確認しました。');
