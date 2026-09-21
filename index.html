@@ -364,10 +364,16 @@
         </div>
         <p class="dialog-note" id="pendingOrderDate"></p>
         <div class="pending-order-summary" id="pendingOrderSummary"></div>
+        <fieldset class="pending-shochu-field" id="pendingShochuRemainingField" hidden>
+          <legend>焼酎キープ残量 <small>任意</small></legend>
+          <p class="field-help">飲食後に実物を確認して入力します。空欄なら残量は変更しません。</p>
+          <div class="pending-shochu-inputs" id="pendingShochuRemainingInputs"></div>
+        </fieldset>
+        <p class="dialog-note" id="recordOrderStatus" aria-live="polite"></p>
         <div class="pending-order-actions">
           <button class="secondary-button" type="button" id="inspectPendingOrder">内容を確認</button>
           <button class="secondary-button" type="button" id="discardPendingOrder">今回は記録しない</button>
-          <button class="primary-button" type="submit">注文を記録する</button>
+          <button class="primary-button" type="submit" id="confirmRecordOrder">注文を記録する</button>
         </div>
       </form>
     </dialog>

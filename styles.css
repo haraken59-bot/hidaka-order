@@ -15,6 +15,19 @@ dialog { border:0; border-radius:18px; padding:0; width:min(600px,calc(100% - 24
 .menu-sort-control { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:2px 0 10px; }.menu-sort-control > span { color:var(--muted); font-size:12px; font-weight:700; }.menu-sort-choices { margin:0; }.menu-sort-choices label { padding:6px 10px; }
 .offering-switch-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }.season-switch-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }.offering-period-settings > p { margin:0 0 8px; font-size:13px; font-weight:700; }.offering-period-settings > p small { color:var(--muted); font-size:11px; font-weight:400; }.offering-period-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .pending-order-dialog { width:min(460px,calc(100% - 24px)); }.pending-order-summary { display:grid; gap:5px; padding:12px 13px; border-radius:10px; background:#fff4d7; }.pending-order-summary strong { color:#765b1b; font-size:14px; }.pending-order-summary span { color:#6c625c; font-size:12px; line-height:1.5; }.pending-order-actions { display:grid; grid-template-columns:1fr 1fr; gap:9px; }.pending-order-actions .primary-button { grid-column:1 / -1; padding:12px; }.pending-order-actions .secondary-button { padding:10px 7px; font-size:12px; }
+.pending-shochu-field { margin:0; padding:11px 12px 12px; border:1px solid #d9e7df; border-radius:11px; background:#f6fbf8; }
+.pending-shochu-field legend { padding:0 5px; color:#246344; font-size:13px; font-weight:800; }
+.pending-shochu-field legend small { color:var(--muted); font-size:11px; font-weight:400; }
+.pending-shochu-field .field-help { margin:0 0 8px; }
+.pending-shochu-inputs { display:grid; gap:7px; }
+.pending-shochu-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px; padding:7px 9px; border-radius:8px; background:#fff; }
+.pending-shochu-row strong,.pending-shochu-row small { display:block; }
+.pending-shochu-row strong { color:#246344; font-size:13px; }
+.pending-shochu-row small { color:var(--muted); font-size:11px; }
+.item-dialog .pending-shochu-row label { display:grid; grid-template-columns:42px 72px auto; align-items:center; gap:5px; color:var(--muted); font-size:11px; }
+.item-dialog .pending-shochu-row input { width:72px; min-width:0; padding:7px 6px; text-align:right; }
+.dialog-note.is-success { color:var(--green); font-weight:800; }
+.dialog-note.is-error { color:var(--red-dark); font-weight:800; }
 .backup-actions { display:grid; grid-template-columns:1fr 1fr; gap:9px; }.backup-actions .secondary-button,.backup-actions .file-label { width:100%; margin:0; }.backup-actions .file-label { display:grid; place-items:center; }
 .drink-select { width:100%; border:1px solid var(--line); border-radius:10px; padding:11px 13px; color:var(--ink); background:#fff; font-size:14px; }
 .field-help { margin:9px 0 0; color:var(--muted); font-size:12px; line-height:1.45; }
@@ -30,16 +43,6 @@ dialog { border:0; border-radius:18px; padding:0; width:min(600px,calc(100% - 24
 .shochu-keep-bottle .shochu-remaining { grid-column:2; grid-row:1; color:var(--red-dark); font-size:13px; font-weight:800; white-space:nowrap; }
 .shochu-keep-bottle small { color:var(--muted); font-size:11px; line-height:1.5; }
 .shochu-keep-bottle .shochu-fee { grid-column:2; text-align:right; white-space:nowrap; }
-.shochu-keep-actions { grid-column:1 / -1; display:flex; justify-content:flex-end; margin-top:3px; }
-.shochu-keep-actions > button, .shochu-remaining-buttons button { min-height:30px; padding:5px 10px; border:1px solid #b9d4c3; border-radius:7px; color:#246344; background:#fff; font-size:11px; font-weight:800; }
-.shochu-keep-actions button:disabled { cursor:not-allowed; opacity:.55; }
-.shochu-remaining-editor { display:grid; grid-template-columns:auto minmax(110px,1fr); align-items:center; gap:5px 9px; width:100%; }
-.shochu-remaining-editor input[type="range"] { width:100%; margin:0; accent-color:var(--red); }
-.shochu-remaining-value { color:var(--red-dark); font-size:13px; font-weight:800; }
-.shochu-remaining-buttons { grid-column:1 / -1; display:flex; justify-content:flex-end; gap:6px; }
-.shochu-keep-notice { margin:0; padding-top:2px; font-weight:800; }
-.shochu-keep-notice.is-success { color:#246344; }
-.shochu-keep-notice.is-error { color:var(--red-dark); }
 .danger-zone .secondary-button { width:100%; margin:2px 0 8px; }
 .initial-data-status { min-height:19px; margin:0 0 10px!important; color:var(--green)!important; font-size:12px!important; font-weight:700; }
 .app-version-info { display:flex; flex-wrap:wrap; justify-content:center; gap:5px 16px; padding:2px 0 4px; color:var(--muted); font-size:11px; }

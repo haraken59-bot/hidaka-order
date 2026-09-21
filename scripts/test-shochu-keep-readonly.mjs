@@ -206,19 +206,33 @@ class TestElement {
     this.attributes = {};
     this.dataset = {};
     this.title = '';
+    this.hidden = false;
   }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
   setAttribute(name, value) { this.attributes[name] = String(value); }
+  querySelectorAll(selector) {
+    const descendants = this.children.flatMap(child => child instanceof TestElement ? [child, ...child.querySelectorAll('*')] : []);
+    if (selector === '*') return descendants;
+    if (selector === 'input[data-pending-shochu-bottle]') return descendants.filter(child => child.tagName === 'input' && child.dataset.pendingShochuBottle);
+    return [];
+  }
 }
 const keepContainer = new TestElement('div');
+const pendingRemainingField = new TestElement('fieldset');
+const pendingRemainingInputs = new TestElement('div');
 const uiBlockStart = appSource.indexOf('  function shochuKeepMessage');
 const uiBlockEnd = appSource.indexOf('\n  function renderCloudAuthStatus', uiBlockStart);
 assert.ok(uiBlockStart >= 0 && uiBlockEnd > uiBlockStart, 'keep UI functions must be present');
 const uiContext = {
   window: {},
   document: { createElement: tagName => new TestElement(tagName) },
-  $: selector => selector === '#shochuKeepStatus' ? keepContainer : null,
+  $: selector => ({
+    '#shochuKeepStatus': keepContainer,
+    '#pendingShochuRemainingField': pendingRemainingField,
+    '#pendingShochuRemainingInputs': pendingRemainingInputs
+  }[selector] || null),
+  $$: (selector, parent) => parent?.querySelectorAll(selector) || [],
   yen: value => `¥${value}`,
   KEEP_SHOCHU_FEE: { price: 220 },
   Array,
@@ -238,11 +252,47 @@ assert.equal(renderedBottles[0].children[0].textContent, '白岳しろ');
 assert.equal(renderedBottles[0].children[1].textContent, '残量 約70%');
 assert.equal(renderedBottles[0].children[2].textContent, '開始 2026/9/10');
 assert.equal(renderedBottles[0].children[3].textContent, '割代 ¥220（固定）');
-assert.equal(renderedBottles[0].children[4].children[0].textContent, '残量を変更');
+assert.equal(renderedBottles[0].children.length, 4, 'the planning screen must remain display-only');
+assert.equal(pendingRemainingField.hidden, false);
+assert.equal(pendingRemainingInputs.children.length, 2);
+const firstPendingInput = pendingRemainingInputs.children[0].children[1].children[0];
+assert.equal(firstPendingInput.type, 'number');
+assert.equal(firstPendingInput.placeholder, '未入力');
+assert.deepEqual(JSON.parse(JSON.stringify(uiContext.collectPendingShochuRemainingUpdates())), []);
+firstPendingInput.value = '60';
+assert.deepEqual(JSON.parse(JSON.stringify(uiContext.collectPendingShochuRemainingUpdates())), [{ bottleId: bottleB, brand: '白岳しろ', remaining: 60 }]);
 uiContext.renderShochuKeepStatus({ storeName: 'やきとり日高', bottles: [] });
 assert.equal(keepContainer.children[0].textContent, '現在キープなし・割代 ¥220（固定）');
+assert.equal(pendingRemainingField.hidden, true);
+assert.equal(uiContext.parseShochuRemainingInput(''), null, 'blank remaining must not update the cloud');
+assert.equal(uiContext.parseShochuRemainingInput('45'), 45);
+assert.throws(() => uiContext.parseShochuRemainingInput('45.5'), /0〜100%の整数/);
+assert.throws(() => uiContext.parseShochuRemainingInput('101'), /0〜100%の整数/);
+
+const orderTimeUpdates = [];
+uiContext.window.HidakaSupabase = {
+  async updateShochuKeepRemaining(bottleId, remaining) {
+    orderTimeUpdates.push({ bottleId, remaining });
+    if (bottleId === bottleA) throw new Error('save failed');
+    return { storeName: 'やきとり日高', bottles: [{ id: bottleB, brand: '白岳しろ', remaining, keptAt: '2026-09-10' }] };
+  }
+};
+const orderTimeResult = await uiContext.saveRecordedOrderShochuRemaining([
+  { bottleId: bottleB, brand: '白岳しろ', remaining: 60 },
+  { bottleId: bottleA, brand: '黒霧島', remaining: 40 }
+]);
+assert.deepEqual(orderTimeUpdates, [{ bottleId: bottleB, remaining: 60 }, { bottleId: bottleA, remaining: 40 }]);
+assert.equal(orderTimeResult.refreshed.bottles[0].remaining, 60);
+assert.equal(orderTimeResult.failures.length, 1, 'a cloud failure must be reported without undoing other work');
+assert.equal(orderTimeResult.failures[0].brand, '黒霧島');
 
 const indexSource = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 assert.equal(indexSource.includes('焼酎キープの割代 ¥220 は毎回'), false, 'the drink field must not repeat the keep fee');
+assert.equal(indexSource.includes('id="pendingShochuRemainingField"'), true, 'remaining input belongs in the order record dialog');
+assert.equal(indexSource.includes('空欄なら残量は変更しません'), true);
+assert.equal(appSource.includes('残量を変更'), false, 'the planning screen must not contain the old edit action');
+const historySaveIndex = appSource.indexOf('state.history.push(historyRecord)');
+const cloudSaveIndex = appSource.indexOf('await saveRecordedOrderShochuRemaining(remainingUpdates)');
+assert.ok(historySaveIndex >= 0 && cloudSaveIndex > historySaveIndex, 'local history must be saved before the optional cloud remaining update');
 
-console.log('Shochu keep read and manual remaining update checks passed.');
+console.log('Shochu keep display and order-record remaining update checks passed.');
