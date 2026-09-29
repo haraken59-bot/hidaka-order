@@ -6,7 +6,7 @@
   const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
   const DATA_SCHEMA_VERSION = 6;
-  const APP_VERSION = '1.18.1';
+  const APP_VERSION = '1.19.1';
   const BEFORE_CLOUD_RESTORE_KEY = 'hidaka-order-before-cloud-restore-v1';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-09-04-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-04';
@@ -411,7 +411,6 @@
     const preferences = order?.preferences && typeof order.preferences === 'object' ? order.preferences : {};
     const selectedDrink = preferences.drink && preferences.drink !== 'none'
       ? order.items?.find(item => item.category === 'drink' && (item.id === preferences.drink || matchesSelectedDrink(item, preferences.drink)))
-        || state.menu.find(item => item.category === 'drink' && (item.id === preferences.drink || matchesSelectedDrink(item, preferences.drink)))
       : null;
     return normalizeVisitContext({
       budget: preferences.budget,
@@ -455,7 +454,8 @@
     const recordedAt = Number.isFinite(new Date(recordedAtInput).getTime()) ? recordedAtInput : '';
     const context = normalizeVisitContext(raw.context ?? raw['状況'], menu);
     const feedback = normalizeFeedback(raw.feedback ?? raw['フィードバック']);
-    return { id, visitId, storeId, date, visitedAt, visitTimeKnown: raw.visitTimeKnown === true || hasVisitTime, recordedAt, total, context, items, ...(hasFeedback(feedback) ? { feedback } : {}) };
+    const removedItems = Array.isArray(raw.removedItems) ? raw.removedItems.map(normalizeSuggestedItem).filter(Boolean) : [];
+    return { id, visitId, storeId, date, visitedAt, visitTimeKnown: raw.visitTimeKnown === true || hasVisitTime, recordedAt, total, context, items, ...(removedItems.length ? { removedItems } : {}), ...(hasFeedback(feedback) ? { feedback } : {}) };
   }
   function normalizePendingOrder(raw) {
     if (!raw || !raw.order || !Array.isArray(raw.order.items)) return null;
@@ -493,6 +493,10 @@
       order: {
         storeId,
         items,
+        removedItems: Array.isArray(raw.order.removedItems) ? raw.order.removedItems.map(entry => {
+          const restored = normalizePendingOrder({ order: { items: [entry.item] } });
+          return restored ? { item: restored.order.items[0], index: Math.max(0, Math.round(Number(entry.index) || 0)) } : null;
+        }).filter(Boolean) : [],
         total: items.reduce((sum, item) => sum + item.price, 0),
         budget: ORDER_BUDGET,
         unavailable: Array.isArray(raw.order.unavailable) ? raw.order.unavailable.map(String) : [],
@@ -712,7 +716,7 @@
     const directMatch = drinks.find(item => item.id === currentValue);
     const legacyMatch = drinks.find(item => matchesSelectedDrink(item, currentValue));
     const value = directMatch?.id || legacyMatch?.id || 'none';
-    const choices = [{ value: 'none', label: '飲まない' }, ...drinks.map(item => ({ value: item.id, label: `${item.name}（${yen(item.price)}）` }))];
+    const choices = [{ value: 'none', label: 'なし' }, ...drinks.map(item => ({ value: item.id, label: `${item.name}（${yen(item.price)}）` }))];
     select.replaceChildren(...choices.map(choice => {
       const option = document.createElement('option');
       option.value = choice.value;
@@ -1003,7 +1007,26 @@
   function orderHeading(order) {
     const mood = order.preferences.moods.map(value => MOOD_LABEL[value] || TAG_LABEL[value] || value).join('・');
     const base = mood ? `${mood}を優先したおすすめ` : order.preferences.hunger === 'light' ? 'つまみ軽めのおすすめ' : order.preferences.hunger === 'hearty' ? 'つまみ多めのおすすめ' : 'バランスのよいおすすめ';
-    return `${base}（串 ${order.preferences.skewerCount}本）`;
+    return `${base}（串 ${order.items.filter(item => item.category === 'skewer').length}本・${order.items.filter(item => item.category !== 'fee').length}品）`;
+  }
+
+  function adjustOrderItem(order, index, restore = false) {
+    const items = [...order.items];
+    const removedItems = [...(order.removedItems || [])];
+    if (restore) {
+      const entry = removedItems[index];
+      if (!entry) return order;
+      items.splice(Math.min(entry.index, items.length), 0, entry.item);
+      removedItems.splice(index, 1);
+    } else {
+      if (!items[index] || items[index].category === 'fee') return order;
+      removedItems.push({ item: items[index], index });
+      items.splice(index, 1);
+    }
+    const unavailable = order.unavailable.filter(message => !message.startsWith('目安予算 '));
+    const guidance = budgetGuidance(items, order.budget);
+    if (guidance) unavailable.unshift(guidance);
+    return { ...order, items, removedItems, total: items.reduce((sum, item) => sum + item.price, 0), unavailable };
   }
 
   function clearPendingReminderTimer() {
@@ -1086,12 +1109,20 @@
       const reason = item.recommendationReason ? `<small class="recommendation-reason">理由: ${escapeHtml(item.recommendationReason)}</small>` : '';
       const stockControl = item.category === 'fee' ? '' : `<label class="out-of-stock"><input class="out-of-stock-check" type="checkbox" data-item-id="${escapeHtml(item.id)}" /> 品切れ</label>`;
       const changedMark = item.manuallyChanged ? '<span class="manual-change-mark">変更済み</span>' : '';
-      const changeControl = item.category === 'fee' || item.manuallyAdded ? '' : `<button class="change-order-item" type="button" data-item-index="${index}">変更</button>`;
+      const changeControl = (item.category === 'fee' || item.manuallyAdded ? '' : `<button class="change-order-item" type="button" data-item-index="${index}">変更</button>`) + (item.category === 'fee' ? '' : `<button class="adjust-order-item" type="button" data-item-index="${index}" aria-label="${escapeHtml(item.name)}を外す">外す</button>`);
       return `<li class="order-item"><span class="order-number">${index + 1}</span><div class="order-details"><strong>${escapeHtml(item.name)}${moodMark}${selectedMark}${changedMark}</strong><small>${CATEGORY_LABEL[item.category]}</small>${reason}</div><div class="order-item-controls"><span class="order-price">${yen(item.price)}</span><div>${changeControl}${stockControl}</div></div></li>`;
     }).join('') : '<li class="order-item"><div class="order-details"><strong>この条件ではメニューを組めませんでした</strong><small>メニュー登録や品切れ状況を確認してください。</small></div></li>';
     const unavailable = order.unavailable.length ? `<p class="notice">${order.unavailable.map(escapeHtml).join('<br>')}</p>` : '';
     $('#result').innerHTML = `<article class="result-card"><div class="result-top"><p>頼む順番まで、このままどうぞ</p><h2>${orderHeading(order)}</h2><div class="price-summary"><strong>${yen(order.total)}</strong><small>目安 ${yen(order.budget)}<br>${budgetStatus}${isEstimate ? '（価格は目安）' : ''}</small></div></div><ol class="order-list">${list}</ol>${unavailable}<div class="result-actions"><button class="secondary-button" type="button" id="regenerate">組み直す</button><button class="secondary-button" type="button" id="reconsiderOutOfStock" disabled>品切れを除いて組み直す</button><button class="secondary-button" type="button" id="addFromMenu">メニューから追加</button><button class="secondary-button start-over-button" type="button" id="startOver">条件をリセットして最初から</button><button class="primary-button pending-record-button" type="button" id="recordOrder">この注文を記録</button></div></article>`;
     const reconsiderButton = $('#reconsiderOutOfStock');
+    const removedList = (order.removedItems || []).map((entry, index) => `<div class="removed-order-item"><span>${escapeHtml(entry.item.name)}（外した商品）</span><button class="restore-order-item" type="button" data-item-index="${index}" aria-label="${escapeHtml(entry.item.name)}を戻す">戻す</button></div>`).join('');
+    $('.order-list').insertAdjacentHTML('afterend', `<div class="removed-order-list">${removedList}</div>`);
+    for (const [selector, restore] of [['.adjust-order-item', false], ['.restore-order-item', true]]) {
+      $$(selector).forEach(button => button.addEventListener('click', () => {
+        currentOrder = adjustOrderItem(currentOrder, Number(button.dataset.itemIndex), restore);
+        renderOrder(currentOrder);
+      }));
+    }
     const stockChecks = $$('.out-of-stock-check');
     stockChecks.forEach(check => check.addEventListener('change', () => { reconsiderButton.disabled = !stockChecks.some(input => input.checked); }));
     $$('.change-order-item').forEach(button => button.addEventListener('click', () => openChangeOrderItemDialog(Number(button.dataset.itemIndex))));
@@ -1138,7 +1169,7 @@
       recommendationReason: item.recommendationReason || '',
       ...(item.manuallyChanged && item.changedFrom ? { aiSuggestion: item.changedFrom, changeReason: item.changeReason || '' } : {})
     }));
-    return normalizeHistoryItem({ id, visitId, storeId: order.storeId || getActiveStoreId(), date, visitedAt, visitTimeKnown: hasVisitTime, recordedAt, total: order.total, context: createVisitContext(order), items }, state.menu);
+    return normalizeHistoryItem({ id, visitId, storeId: order.storeId || getActiveStoreId(), date, visitedAt, visitTimeKnown: hasVisitTime, recordedAt, total: order.total, context: createVisitContext(order), items, removedItems: (order.removedItems || []).map(entry => entry.item) }, state.menu);
   }
 
   async function recordCurrentOrder() {

@@ -299,6 +299,44 @@
     return { storeId: config.supabaseStoreId, storeName: String(stores[0].name).trim(), bottles };
   }
 
+  function normalizeHarakenNaviContext(raw, expectedStoreId) {
+    const result = Array.isArray(raw) && raw.length === 1 ? raw[0] : raw;
+    if (!result || Number(result.schema_version) !== 1 || !result.store || result.store.id !== expectedStoreId) {
+      throw new Error('ハラケンナビ参照データの店舗または形式を確認できません。');
+    }
+    if (!['manual_backup', 'normalized_tables'].includes(result.data_source)
+      || !Array.isArray(result.current_menu) || !Array.isArray(result.recent_orders)
+      || !result.order_summary || typeof result.order_summary !== 'object'
+      || !result.bottle_status || typeof result.bottle_status !== 'object'
+      || !Array.isArray(result.bottle_status.bottles)) {
+      throw new Error('ハラケンナビ参照データの内容を確認できません。');
+    }
+    return result;
+  }
+
+  // 将来のハラケンナビ接続用。本人限定RPCを読み取るだけで、端末・クラウドとも変更しない。
+  async function readHarakenNaviContext({ recentLimit = 5 } = {}) {
+    const config = requireConfig();
+    const limit = Number(recentLimit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('取得する履歴件数は1〜20件で指定してください。');
+    const session = await getFreshSession();
+    if (!session) throw new Error('先にクラウドへログインしてください。');
+    const user = await readAuthenticatedUser(session);
+    if (!user.id || !await verifyStoreLink(session)) throw new Error('このログインでは、やきとり日高のデータを確認できません。');
+    const response = await authenticatedFetch('/rest/v1/rpc/get_hidaka_ai_context', session, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        p_app_key: config.appKey,
+        p_legacy_store_id: config.legacyStoreId,
+        p_recent_limit: limit
+      })
+    });
+    const result = normalizeHarakenNaviContext(await response.json(), config.supabaseStoreId);
+    assertActiveSession(session);
+    return result;
+  }
+
   function todayLocalDate() {
     return new Intl.DateTimeFormat('sv-SE').format(new Date());
   }
@@ -654,6 +692,7 @@
     readBackupInfo: () => readManualBackup(false),
     readBackup: () => readManualBackup(true),
     readShochuKeepStatus,
+    readHarakenNaviContext,
     updateShochuKeepRemaining,
     saveManualBackup,
     confirmBackupOwner,

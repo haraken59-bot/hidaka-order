@@ -142,3 +142,8 @@ dialog { border:0; border-radius:18px; padding:0; width:min(600px,calc(100% - 24
   .order-number { margin-top:2px; }
   .order-item-controls > div { flex-direction:column; align-items:flex-end; gap:5px; }
 }
+.adjust-order-item, .restore-order-item { font: inherit; font-size: .8rem; padding: 6px 8px; border: 1px solid #d8cec6; border-radius: 6px; background: #fffaf5; color: #963f2e; cursor: pointer; }
+.removed-order-list { padding: 0 16px; }
+.removed-order-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; font-size: .85rem; color: #726962; }
+.removed-order-item span { min-width: 0; overflow-wrap: anywhere; }
+.restore-order-item { flex-shrink: 0; }
