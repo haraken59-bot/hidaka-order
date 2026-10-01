@@ -6,7 +6,7 @@
   const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
   const DATA_SCHEMA_VERSION = 6;
-  const APP_VERSION = '1.19.1';
+  const APP_VERSION = '1.20.0';
   const BEFORE_CLOUD_RESTORE_KEY = 'hidaka-order-before-cloud-restore-v1';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-09-04-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-04';
@@ -320,6 +320,7 @@
       lineId: String(source.lineId ?? source['注文明細ID'] ?? `${historyId}-line-${orderIndex}`),
       menuId,
       name,
+      category: String(source.category || menuMatch?.category || 'unknown'),
       orderIndex,
       quantity,
       unitPrice,
@@ -455,7 +456,8 @@
     const context = normalizeVisitContext(raw.context ?? raw['状況'], menu);
     const feedback = normalizeFeedback(raw.feedback ?? raw['フィードバック']);
     const removedItems = Array.isArray(raw.removedItems) ? raw.removedItems.map(normalizeSuggestedItem).filter(Boolean) : [];
-    return { id, visitId, storeId, date, visitedAt, visitTimeKnown: raw.visitTimeKnown === true || hasVisitTime, recordedAt, total, context, items, ...(removedItems.length ? { removedItems } : {}), ...(hasFeedback(feedback) ? { feedback } : {}) };
+    const proposedItems = Array.isArray(raw.proposedItems) ? raw.proposedItems.map((item, index) => normalizeHistoryLine(item, index, id, storeId, menu)).filter(Boolean) : null;
+    return { id, visitId, storeId, date, visitedAt, visitTimeKnown: raw.visitTimeKnown === true || hasVisitTime, recordedAt, total, context, items, proposedItems, includeFeaturedDish: raw.includeFeaturedDish === true, cloudSave: raw.cloudSave && typeof raw.cloudSave === 'object' ? { ...raw.cloudSave } : null, ...(removedItems.length ? { removedItems } : {}), ...(hasFeedback(feedback) ? { feedback } : {}) };
   }
   function normalizePendingOrder(raw) {
     if (!raw || !raw.order || !Array.isArray(raw.order.items)) return null;
@@ -493,6 +495,7 @@
       order: {
         storeId,
         items,
+        proposedItems: Array.isArray(raw.order.proposedItems) ? raw.order.proposedItems.map(normalizeMenuItem).filter(Boolean) : null,
         removedItems: Array.isArray(raw.order.removedItems) ? raw.order.removedItems.map(entry => {
           const restored = normalizePendingOrder({ order: { items: [entry.item] } });
           return restored ? { item: restored.order.items[0], index: Math.max(0, Math.round(Number(entry.index) || 0)) } : null;
@@ -885,7 +888,7 @@
     if (budgetMessage) unavailable.unshift(budgetMessage);
     const excludedNames = state.menu.filter(item => excluded.has(item.id)).map(item => item.name);
     if (excludedNames.length) unavailable.unshift(`品切れとして除外中: ${excludedNames.join('・')}`);
-    return { storeId: getActiveStoreId(), items: selected, total, budget: p.budget, unavailable, preferences: p, excludedIds: [...excluded] };
+    return { storeId: getActiveStoreId(), items: selected, proposedItems: selected.map(item => ({ ...item })), total, budget: p.budget, unavailable, preferences: p, excludedIds: [...excluded] };
   }
 
   function replaceOutOfStockItems(order, checkedIds, excludedIds = getTodayOutOfStockIds()) {
@@ -1162,6 +1165,7 @@
       lineId: `${id}-line-${index + 1}`,
       menuId: item.id || '',
       name: item.name,
+      category: item.category,
       orderIndex: index + 1,
       quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
       unitPrice: item.price,
@@ -1169,7 +1173,55 @@
       recommendationReason: item.recommendationReason || '',
       ...(item.manuallyChanged && item.changedFrom ? { aiSuggestion: item.changedFrom, changeReason: item.changeReason || '' } : {})
     }));
-    return normalizeHistoryItem({ id, visitId, storeId: order.storeId || getActiveStoreId(), date, visitedAt, visitTimeKnown: hasVisitTime, recordedAt, total: order.total, context: createVisitContext(order), items, removedItems: (order.removedItems || []).map(entry => entry.item) }, state.menu);
+    return normalizeHistoryItem({ id, visitId, storeId: order.storeId || getActiveStoreId(), date, visitedAt, visitTimeKnown: hasVisitTime, recordedAt, total: order.total, context: createVisitContext(order), items, proposedItems: order.proposedItems?.map(item => ({ ...item, menuId: item.id, unitPrice: item.price, source: item.category === 'fee' ? 'fixed' : 'recommended' })) ?? null, includeFeaturedDish: order.preferences.includeFeaturedDish, removedItems: (order.removedItems || []).map(entry => entry.item) }, state.menu);
+  }
+
+  function buildCloudOrderRecord(entry) {
+    const lines = items => items.map((item, index) => ({ menu_id: item.menuId || item.id || '', name: item.name, category: item.category || 'unknown', order_index: index + 1, quantity: item.quantity || 1, unit_price: item.unitPrice ?? item.price, source: item.source || 'recommended', change_reason: item.changeReason || null, ai_suggestion: item.aiSuggestion || null }));
+    const items = lines(entry.items);
+    return {
+      schema_version: 1, id: entry.id, visit_id: entry.visitId, local_store_id: entry.storeId,
+      visited_at: entry.visitedAt, recorded_at: entry.recordedAt || entry.visitedAt,
+      context: entry.context, starting_drink: entry.context.startingDrinkName || null,
+      proposed_items: entry.proposedItems === null ? null : lines(entry.proposedItems || []),
+      included_featured_dish: entry.includeFeaturedDish, items,
+      removed_items: lines(entry.removedItems || []),
+      feedback: entry.feedback || null
+    };
+  }
+
+  async function saveHistoryToCloud(entry) {
+    try {
+      if (!window.HidakaSupabase?.saveOrderHistory) throw new Error('クラウド接続を利用できません。');
+      const result = await window.HidakaSupabase.saveOrderHistory(buildCloudOrderRecord(entry), entry.cloudSave?.ownerId || '');
+      entry.cloudSave = { state: 'saved', ownerId: result.user_id, savedAt: result.saved_at };
+      saveState();
+      return { state: 'success', message: '注文履歴を端末とクラウドに保存しました。' };
+    } catch (error) {
+      entry.cloudSave = { ...entry.cloudSave, state: 'failed' };
+      saveState();
+      return { state: 'error', message: `注文履歴は端末に保存しましたが、クラウド保存に失敗しました。${friendlyCloudError(error)}` };
+    }
+  }
+
+  function cloudHistoryStatus(entry) {
+    if (entry.cloudSave?.state === 'saved') return 'クラウド保存済み';
+    if (entry.cloudSave?.state === 'failed') return '端末保存済み・クラウド保存失敗';
+    return 'クラウド保存状況は未確認';
+  }
+
+  function showPersistentRecordOutcome(outcome) {
+    const result = $('#result .result-card');
+    if (!result) return;
+    let status = $('#persistentRecordStatus');
+    if (!status) {
+      status = document.createElement('p');
+      status.id = 'persistentRecordStatus';
+      status.setAttribute('role', 'status');
+      result.prepend(status);
+    }
+    status.className = `notice is-${outcome.state}`;
+    status.textContent = outcome.message;
   }
 
   async function recordCurrentOrder() {
@@ -1213,6 +1265,8 @@
         };
       }
     }
+    const cloudOutcome = await saveHistoryToCloud(historyRecord);
+    recordOutcome = { state: recordOutcome.state === 'error' || cloudOutcome.state === 'error' ? 'error' : 'success', message: `${recordOutcome.message} ${cloudOutcome.message}` };
     recordOrderBusy = false;
     const dialog = $('#pendingOrderDialog');
     if (dialog.open) dialog.close();
@@ -1224,6 +1278,7 @@
       button.disabled = true;
       button.classList.remove('pending-record-button');
     }
+    showPersistentRecordOutcome(recordOutcome);
     openFeedbackDialog(historyRecord.id, false, recordOutcome);
   }
 
@@ -1351,7 +1406,7 @@
     if (returnToHistory) openHistoryDialog();
   }
 
-  function saveFeedback(event) {
+  async function saveFeedback(event) {
     event.preventDefault();
     const dialog = $('#feedbackDialog');
     const entry = state.history.find(item => item.id === dialog.dataset.historyId);
@@ -1368,10 +1423,17 @@
       comment: $('#feedbackComment').value,
       updatedAt: new Date().toISOString()
     });
-    if (hasFeedback(feedback)) entry.feedback = feedback;
-    else delete entry.feedback;
+    entry.feedback = feedback;
     saveState();
-    closeFeedbackDialog();
+    const button = event.submitter;
+    if (button) button.disabled = true;
+    $('#feedbackStatus').textContent = '感想を端末に保存しました。クラウドへ保存しています…';
+    const outcome = await saveHistoryToCloud(entry);
+    showPersistentRecordOutcome(outcome);
+    if (button) button.disabled = false;
+    $('#feedbackStatus').textContent = outcome.message;
+    $('#feedbackStatus').className = `dialog-note is-${outcome.state}`;
+    if (outcome.state === 'success') closeFeedbackDialog();
   }
 
   function openHistoryDialog() {
@@ -1385,7 +1447,7 @@
         const calculatedTotal = hasPrices ? entry.items.reduce((sum, item) => sum + historyUnitPrice(item) * item.quantity, 0) : null;
         const total = Number.isFinite(Number(entry.total)) && entry.total !== null ? Number(entry.total) : calculatedTotal;
         const totalQuantity = entry.items.reduce((sum, item) => sum + item.quantity, 0);
-        const summary = `${totalQuantity}品・${total !== null ? `合計 ${yen(total)}` : '金額記録なし'}`;
+        const summary = `${totalQuantity}品・${total !== null ? `合計 ${yen(total)}` : '金額記録なし'}<br>${cloudHistoryStatus(entry)}`;
         const items = entry.items.map(item => {
           const unitPrice = historyUnitPrice(item);
           const quantity = item.quantity > 1 ? ` ×${item.quantity}` : '';
