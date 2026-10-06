@@ -6,7 +6,11 @@ export const PUBLIC_FILES = Object.freeze([
   'index.html', 'app.js', 'styles.css', 'supabase-connection.js',
   'service-worker.js', 'manifest.webmanifest',
   'data/stores.json', 'data/hidaka-menu.csv',
-  'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg'
+  'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg',
+  'icons/icon-v2-16.png', 'icons/icon-v2-32.png', 'icons/icon-v2-48.png',
+  'icons/icon-v2-192.png', 'icons/icon-v2-512.png',
+  'icons/icon-v2-maskable-192.png', 'icons/icon-v2-maskable-512.png',
+  'icons/apple-touch-icon-v2.png', 'icons/favicon-v2.ico'
 ]);
 const CONFIG_FIELDS = ['enabled', 'mode', 'supabaseUrl', 'publishableKey', 'appKey', 'legacyStoreId', 'supabaseStoreId'];
 

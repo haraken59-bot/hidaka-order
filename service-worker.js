@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hidaka-order-pwa-v44-otp';
+const CACHE_NAME = 'hidaka-order-pwa-v45-icons';
 const APP_ASSETS = [
   './',
   './index.html',
@@ -9,7 +9,11 @@ const APP_ASSETS = [
   './data/hidaka-menu.csv',
   './manifest.webmanifest',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
+  './icons/icon-v2-16.png', './icons/icon-v2-32.png', './icons/icon-v2-48.png',
+  './icons/icon-v2-192.png', './icons/icon-v2-512.png',
+  './icons/icon-v2-maskable-192.png', './icons/icon-v2-maskable-512.png',
+  './icons/apple-touch-icon-v2.png', './icons/favicon-v2.ico'
 ];
 
 self.addEventListener('install', event => {
