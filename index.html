@@ -384,14 +384,14 @@
           <p class="eyebrow">ログインだけでは保存・復元しません</p>
           <h2>クラウドへログイン</h2>
         </div>
-        <p class="dialog-note"><strong>1.</strong> 焼酎キープ管理で使用しているものと同じメールアドレスへ、ログイン用メールを送ります。</p>
+        <p class="dialog-note"><strong>1.</strong> 焼酎キープ管理で使用しているものと同じメールアドレスへ、認証コードを送ります。</p>
         <label>メールアドレス<input id="cloudEmail" type="email" inputmode="email" autocomplete="email" required /></label>
-        <button class="primary-button" id="submitCloudLogin" type="submit">ログイン用メールを送る</button>
+        <button class="primary-button" id="submitCloudLogin" type="submit">認証コードを送信</button>
         <div class="cloud-link-paste">
-          <p class="dialog-note"><strong>2.</strong> 届いたメールのボタンを開かず、右クリックまたは長押しでリンクをコピーして貼り付けます。</p>
-          <label>メールのログインリンク<textarea id="cloudMagicLink" rows="3" autocomplete="off" spellcheck="false" placeholder="https://…/auth/v1/verify?token=…"></textarea></label>
-          <button class="secondary-button" id="verifyCloudMagicLink" type="button">貼り付けたリンクでログイン</button>
-          <p class="field-help">リンクはSupabaseの認証にだけ使用し、端末には保存しません。</p>
+          <p class="dialog-note"><strong>2.</strong> メールに届いた認証コードを入力してください。</p>
+          <label>認証コード<input id="cloudMagicLink" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" /></label>
+          <button class="secondary-button" id="verifyCloudMagicLink" type="button">コードでログイン</button>
+          <button id="changeCloudEmail" type="button" class="secondary-button">メールアドレスを変更</button><p class="field-help">コードは端末には保存しません。</p>
         </div>
         <p class="dialog-note">新しい利用者は作成しません。ログイン後もメニューや履歴は端末内へ保存されます。</p>
         <p id="cloudLoginStatus" class="cloud-login-status" aria-live="polite"></p>

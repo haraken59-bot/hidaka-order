@@ -1,6 +1,15 @@
 (() => {
   'use strict';
 
+// Email OTP state: no credential logging or persistence; no automatic retry.
+const emailOtpState={email:'',busy:false,until:0};
+function emailOtpError(error){
+ if(error?.status===429||error?.code==='over_email_send_rate_limit')return '短時間に送信回数が多いため、少し待ってから再度お試しください。';
+ if(error?.code==='otp_expired')return '認証コードが無効か、有効期限が切れています。時間をおいて再送してください。';
+ return '認証を完了できませんでした。コードと通信状態を確認してください。';
+}
+
+
   const STORAGE_KEY = 'hidaka-order-v1';
   const FULL_BACKUP_FORMAT = 'hidaka-order-full-backup';
   const FULL_BACKUP_SCHEMA_VERSION = 6;
@@ -542,6 +551,7 @@
     $('#cloudLoginButton').addEventListener('click', openCloudLoginDialog);
     $('#cloudLoginForm').addEventListener('submit', submitCloudLogin);
     $('#verifyCloudMagicLink').addEventListener('click', verifyCloudMagicLink);
+    $('#changeCloudEmail').addEventListener('click',()=>{if(emailOtpState.busy)return;emailOtpState.email='';$('#cloudMagicLink').value='';setCloudLoginBusy(false);$('#cloudEmail').focus();});
     $('#cancelCloudLogin').addEventListener('click', () => $('#cloudLoginDialog').close());
     $('#cloudVerifyButton').addEventListener('click', verifyCloudRead);
     $('#cloudLogoutButton').addEventListener('click', logoutCloud);
@@ -2189,13 +2199,17 @@
   }
 
   function setCloudLoginBusy(busy) {
-    $('#cloudEmail').disabled = busy;
-    $('#cloudMagicLink').disabled = busy;
-    $('#submitCloudLogin').disabled = busy;
-    $('#verifyCloudMagicLink').disabled = busy;
-    $('#cancelCloudLogin').disabled = busy;
-    $('#submitCloudLogin').textContent = busy ? '送信中…' : 'ログイン用メールを送る';
+    emailOtpState.busy=busy;
+    const wait=Math.max(0,Math.ceil((emailOtpState.until-Date.now())/1000));
+    $('#cloudEmail').disabled=busy||Boolean(emailOtpState.email);
+    $('#cloudMagicLink').disabled=busy;
+    $('#submitCloudLogin').disabled=busy||wait>0;
+    $('#verifyCloudMagicLink').disabled=busy||!emailOtpState.email;
+    $('#cancelCloudLogin').disabled=busy;
+    $('#changeCloudEmail').disabled=busy;
+    $('#submitCloudLogin').textContent=wait?`再送まで${wait}秒`:emailOtpState.email?'コードを再送':'認証コードを送信';
   }
+  globalThis.setInterval?.(()=>setCloudLoginBusy(emailOtpState.busy),1000);
 
   function setCloudLoginMessage(message, success = false) {
     const statusElement = $('#cloudLoginStatus');
@@ -2210,6 +2224,7 @@
       return;
     }
     $('#cloudLoginForm').reset();
+    emailOtpState.email='';
     setCloudLoginMessage('');
     setCloudLoginBusy(false);
     $('#cloudLoginDialog').showModal();
@@ -2218,36 +2233,36 @@
 
   async function submitCloudLogin(event) {
     event.preventDefault();
-    if (!window.HidakaSupabase?.sendMagicLink) return;
+    if (!window.HidakaSupabase?.sendEmailOtp||emailOtpState.busy||Date.now()<emailOtpState.until) return;
     const email = $('#cloudEmail').value;
     setCloudLoginBusy(true);
     setCloudLoginMessage('ログイン用メールを送信しています。');
     try {
-      const nextStatus = await window.HidakaSupabase.sendMagicLink(email);
-      renderSupabaseStatus(nextStatus);
-      setCloudLoginMessage('メールを送信しました。届いたログインリンクをコピーして、下の欄へ貼り付けてください。', true);
+      const nextStatus = await window.HidakaSupabase.sendEmailOtp(email);
+      emailOtpState.email=email.trim();emailOtpState.until=Date.now()+60000;
+      setCloudLoginMessage('認証コードをメールに送りました。', true);
       $('#cloudActionStatus').textContent = 'ログイン用メールを送信しました。保存先は端末内のままです。';
     } catch (error) {
-      setCloudLoginMessage(friendlyCloudError(error));
+      if(error?.status===429)emailOtpState.until=Date.now()+60000;setCloudLoginMessage(emailOtpError(error));
     } finally {
       setCloudLoginBusy(false);
     }
   }
 
   async function verifyCloudMagicLink() {
-    if (!window.HidakaSupabase?.verifyMagicLink) return;
+    if (!window.HidakaSupabase?.verifyEmailOtp||emailOtpState.busy||!emailOtpState.email) return;
     const magicLink = $('#cloudMagicLink').value.trim();
     setCloudLoginBusy(true);
-    setCloudLoginMessage('リンクを確認して、日高のデータを読み取っています。');
+    setCloudLoginMessage('コードを確認しています。');
     try {
-      const nextStatus = await window.HidakaSupabase.verifyMagicLink(magicLink);
+      const nextStatus = await window.HidakaSupabase.verifyEmailOtp(emailOtpState.email,magicLink);
       renderSupabaseStatus(nextStatus);
       $('#cloudActionStatus').textContent = 'クラウドへログインし、日高のデータを読み取り確認しました。保存先は端末内のままです。';
       $('#cloudLoginForm').reset();
       $('#cloudLoginDialog').close();
       await refreshCloudBackupInfo();
     } catch (error) {
-      setCloudLoginMessage(friendlyCloudError(error));
+      if(error?.status===429)emailOtpState.until=Date.now()+60000;setCloudLoginMessage(emailOtpError(error));
     } finally {
       $('#cloudMagicLink').value = '';
       setCloudLoginBusy(false);
@@ -2345,3 +2360,4 @@
 
   boot();
 })();
+

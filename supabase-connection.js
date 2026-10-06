@@ -602,6 +602,22 @@
     }
   }
 
+  async function emailOtpRequest(path, body) {
+    const config=requireConfig(); let response;
+    try { response=await fetch(config.supabaseUrl+path,{method:'POST',cache:'no-store',headers:{apikey:config.publishableKey,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(15000)}); }
+    catch { throw new Error('認証通信に失敗しました。'); }
+    if(!response.ok){let code;try{code=(await response.json()).error_code;}catch{}const error=new Error('認証できませんでした。');error.status=response.status;error.code=code==='otp_expired'?'otp_expired':undefined;throw error;}
+    try{return await response.json();}catch{throw new Error('認証結果を確認できませんでした。');}
+  }
+  async function sendEmailOtp(email){return emailOtpRequest('/auth/v1/otp',{email:String(email).trim(),create_user:false});}
+  async function verifyEmailOtp(email,token){
+    if(!/^\d{6,10}$/.test(token))throw new Error('認証コードが正しくありません。');
+    const session=await emailOtpRequest('/auth/v1/verify',{email,token,type:'email'});
+    if(session?.user?.is_anonymous!==false||session?.user?.role!=='authenticated')throw new Error('本人認証を確認できませんでした。');
+    saveSession(session);
+    return verifyRead();
+  }
+
   async function signOut() {
     const config = requireConfig();
     const session = loadSession();
@@ -705,6 +721,8 @@
   window.HidakaSupabase = {
     initialize,
     sendMagicLink,
+    sendEmailOtp,
+    verifyEmailOtp,
     verifyMagicLink,
     signOut,
     verifyRead,
