@@ -346,14 +346,37 @@
     if (!user.id || (expectedOwnerId && expectedOwnerId !== user.id)) throw new Error('履歴を保存したアカウントでログインしてください。');
     if (!await verifyStoreLink(session)) throw new Error('店舗の対応を確認できません。');
     assertActiveSession(session);
-    const response = await authenticatedFetch('/rest/v1/rpc/save_hidaka_order_history', session, {
+    const rpc = ['edit', 'delete', 'import'].includes(record.operation) ? 'manage_hidaka_order_history' : 'save_hidaka_order_history';
+    const response = await authenticatedFetch(`/rest/v1/rpc/${rpc}`, session, {
       method: 'POST', signal: AbortSignal.timeout(15000),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ p_order: record, p_app_key: config.appKey, p_legacy_store_id: config.legacyStoreId })
     });
     const result = await response.json();
     if (result?.user_id !== user.id || result?.id !== record.id) throw new Error('クラウド保存結果を確認できません。');
+    assertActiveSession(session);
     return result;
+  }
+
+  async function readHistoryInventory(ids) {
+    const config = requireConfig();
+    const session = await getFreshSession();
+    if (!session) throw new Error('クラウドへログインしてください。');
+    const user = await readAuthenticatedUser(session);
+    if (!await verifyStoreLink(session)) throw new Error('店舗の対応を確認できません。');
+    const records = [];
+    for (let offset = 0; offset < ids.length; offset += 100) {
+      assertActiveSession(session);
+      const response = await authenticatedFetch('/rest/v1/rpc/list_hidaka_order_history', session, {
+        method: 'POST', signal: AbortSignal.timeout(15000), headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_ids: ids.slice(offset, offset + 100), p_app_key: config.appKey, p_legacy_store_id: config.legacyStoreId })
+      });
+      const result = await response.json();
+      if (result?.user_id !== user.id || !Array.isArray(result.records)) throw new Error('クラウド履歴一覧を確認できません。');
+      records.push(...result.records);
+    }
+    assertActiveSession(session);
+    return { user_id: user.id, records };
   }
 
   function todayLocalDate() {
@@ -731,6 +754,7 @@
     readShochuKeepStatus,
     readHarakenNaviContext,
     saveOrderHistory,
+    readHistoryInventory,
     updateShochuKeepRemaining,
     saveManualBackup,
     confirmBackupOwner,

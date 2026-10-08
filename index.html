@@ -304,7 +304,29 @@
         </div>
         <button class="icon-button" value="cancel" aria-label="閉じる">×</button>
       </form>
+      <div class="dialog-content">
+        <button type="button" id="uploadOldHistory" class="secondary-button">過去履歴をクラウドへ送信</button>
+        <button type="button" id="retryHistory" class="text-button">未送信・失敗分を再送</button>
+        <p id="historyManagementStatus" role="status" aria-live="polite"></p>
+      </div>
       <div class="dialog-content history-list" id="historyList"></div>
+    </dialog>
+
+    <dialog id="historyEditDialog" class="data-dialog">
+      <form id="historyEditForm">
+        <div class="dialog-header"><h2>注文履歴を編集</h2><button type="button" id="cancelHistoryEdit" class="icon-button" aria-label="閉じる">×</button></div>
+        <div class="dialog-content">
+          <p>実注文のみ変更します。元の提案は保持します。単価は注文時の金額です。</p>
+          <div id="historyEditLines"></div>
+          <label>商品追加<select id="historyAddMenu"></select></label>
+          <button type="button" id="historyAddLine" class="text-button">選んだ商品を追加</button>
+          <p id="historyEditTotal" aria-live="polite"></p>
+          <label>満足度<select id="historyEditRating"><option value="">未入力</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label>
+          <label>感想<textarea id="historyEditComment" maxlength="300"></textarea></label>
+          <p id="historyEditStatus" role="status"></p>
+          <button type="submit" id="saveHistoryEdit" class="primary-button">端末とクラウドに保存</button>
+        </div>
+      </form>
     </dialog>
 
     <dialog id="feedbackDialog" class="item-dialog feedback-dialog">

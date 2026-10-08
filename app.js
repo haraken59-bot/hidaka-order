@@ -15,7 +15,7 @@ function emailOtpError(error){
   const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
   const DATA_SCHEMA_VERSION = 6;
-  const APP_VERSION = '1.20.0';
+  const APP_VERSION = '1.21.0';
   const BEFORE_CLOUD_RESTORE_KEY = 'hidaka-order-before-cloud-restore-v1';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-09-04-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-04';
@@ -464,9 +464,9 @@ function emailOtpError(error){
     const recordedAt = Number.isFinite(new Date(recordedAtInput).getTime()) ? recordedAtInput : '';
     const context = normalizeVisitContext(raw.context ?? raw['状況'], menu);
     const feedback = normalizeFeedback(raw.feedback ?? raw['フィードバック']);
-    const removedItems = Array.isArray(raw.removedItems) ? raw.removedItems.map(normalizeSuggestedItem).filter(Boolean) : [];
+    const removedItems = Array.isArray(raw.removedItems) ? raw.removedItems.map(item => { const normalized = normalizeSuggestedItem(item); return normalized ? { ...normalized, quantity: item.quantity || 1 } : null; }).filter(Boolean) : [];
     const proposedItems = Array.isArray(raw.proposedItems) ? raw.proposedItems.map((item, index) => normalizeHistoryLine(item, index, id, storeId, menu)).filter(Boolean) : null;
-    return { id, visitId, storeId, date, visitedAt, visitTimeKnown: raw.visitTimeKnown === true || hasVisitTime, recordedAt, total, context, items, proposedItems, includeFeaturedDish: raw.includeFeaturedDish === true, cloudSave: raw.cloudSave && typeof raw.cloudSave === 'object' ? { ...raw.cloudSave } : null, ...(removedItems.length ? { removedItems } : {}), ...(hasFeedback(feedback) ? { feedback } : {}) };
+    return { deletedAt: raw.deletedAt || null, id, visitId, storeId, date, visitedAt, visitTimeKnown: raw.visitTimeKnown === true || hasVisitTime, recordedAt, total, context, items, proposedItems, includeFeaturedDish: raw.includeFeaturedDish === true, cloudSave: raw.cloudSave && typeof raw.cloudSave === 'object' ? { ...raw.cloudSave } : null, ...(removedItems.length ? { removedItems } : {}), ...(hasFeedback(feedback) ? { feedback } : {}) };
   }
   function normalizePendingOrder(raw) {
     if (!raw || !raw.order || !Array.isArray(raw.order.items)) return null;
@@ -748,7 +748,7 @@ function emailOtpError(error){
 
   function sortedHistory() {
     return state.history
-      .filter(entry => (entry.storeId || DEFAULT_STORE_ID) === getActiveStoreId())
+      .filter(entry => !entry.deletedAt && (entry.storeId || DEFAULT_STORE_ID) === getActiveStoreId())
       .map((entry, index) => ({ entry, index }))
       .sort((a, b) => b.entry.date.localeCompare(a.entry.date) || b.index - a.index)
       .map(({ entry }) => entry);
@@ -1196,20 +1196,23 @@ function emailOtpError(error){
       proposed_items: entry.proposedItems === null ? null : lines(entry.proposedItems || []),
       included_featured_dish: entry.includeFeaturedDish, items,
       removed_items: lines(entry.removedItems || []),
-      feedback: entry.feedback || null
+      feedback: entry.feedback || null,
+      known_total: entry.total ?? null,
+      operation: entry.deletedAt ? 'delete' : (entry.cloudSave?.pendingAction || 'save')
     };
   }
 
   async function saveHistoryToCloud(entry) {
+    const pendingCloudSave = { ...entry.cloudSave };
     try {
       if (!window.HidakaSupabase?.saveOrderHistory) throw new Error('クラウド接続を利用できません。');
       const result = await window.HidakaSupabase.saveOrderHistory(buildCloudOrderRecord(entry), entry.cloudSave?.ownerId || '');
       entry.cloudSave = { state: 'saved', ownerId: result.user_id, savedAt: result.saved_at };
       saveState();
-      return { state: 'success', message: '注文履歴を端末とクラウドに保存しました。' };
+      return { state: 'success', alreadyExists: result.already_exists === true, message: '注文履歴を端末とクラウドに保存しました。' };
     } catch (error) {
-      entry.cloudSave = { ...entry.cloudSave, state: 'failed' };
-      saveState();
+      entry.cloudSave = { ...pendingCloudSave, state: 'failed' };
+      try { saveState(); } catch { /* Keep the pending operation in memory; never discard the local history. */ }
       return { state: 'error', message: `注文履歴は端末に保存しましたが、クラウド保存に失敗しました。${friendlyCloudError(error)}` };
     }
   }
@@ -1255,7 +1258,7 @@ function emailOtpError(error){
       return;
     }
     state.history.push(historyRecord);
-    state.history = state.history.slice(-100);
+    // Retain history and pending deletion markers for explicit cloud retries.
     state.pendingOrder = null;
     state.preferences.selectedDishId = '';
     state.preferences.includeFeaturedDish = false;
@@ -1380,8 +1383,9 @@ function emailOtpError(error){
   }
 
   function openFeedbackDialog(historyId, returnToHistory = false, recordOutcome = null) {
+    if (historyManagementBusy) return;
     const entry = state.history.find(item => item.id === historyId);
-    if (!entry) return;
+    if (!entry || entry.deletedAt) return;
     const historyDialog = $('#historyDialog');
     if (historyDialog.open) historyDialog.close();
     const form = $('#feedbackForm');
@@ -1418,9 +1422,10 @@ function emailOtpError(error){
 
   async function saveFeedback(event) {
     event.preventDefault();
+    if (historyManagementBusy) return;
     const dialog = $('#feedbackDialog');
     const entry = state.history.find(item => item.id === dialog.dataset.historyId);
-    if (!entry) return;
+    if (!entry || entry.deletedAt) return;
     const satisfaction = $('input[name="satisfaction"]:checked');
     const repeatPreference = $('input[name="repeatPreference"]:checked')?.value || 'none';
     const amountValue = $('input[name="feedbackAmount"]:checked')?.value || 'none';
@@ -1438,7 +1443,9 @@ function emailOtpError(error){
     const button = event.submitter;
     if (button) button.disabled = true;
     $('#feedbackStatus').textContent = '感想を端末に保存しました。クラウドへ保存しています…';
+    historyManagementBusy = true;
     const outcome = await saveHistoryToCloud(entry);
+    historyManagementBusy = false;
     showPersistentRecordOutcome(outcome);
     if (button) button.disabled = false;
     $('#feedbackStatus').textContent = outcome.message;
@@ -1446,7 +1453,150 @@ function emailOtpError(error){
     if (outcome.state === 'success') closeFeedbackDialog();
   }
 
+  let historyManagementBusy = false;
+  let historyEditDraft = null;
+
+  function historyEditTotal(items) {
+    if (!items.length || items.some(i => i.unitPrice === null || i.unitPrice === '' || !Number.isSafeInteger(Number(i.unitPrice)) || Number(i.unitPrice) < 0 || !Number.isInteger(Number(i.quantity)) || Number(i.quantity) < 1 || Number(i.quantity) > 32767)) return null;
+    const total = items.reduce((sum, i) => sum + Number(i.unitPrice) * Number(i.quantity), 0);
+    return Number.isSafeInteger(total) && total <= 2147483647 ? total : null;
+  }
+
+  function applyHistoryEdit(entry, draft) {
+    if (draft.items.length > 200) throw new Error('明細は200行までです。');
+    const total = historyEditTotal(draft.items);
+    if (total === null) throw new Error('1品以上の商品と、正しい注文時単価・数量を入力してください。');
+    const remaining = new Map();
+    draft.items.forEach(i => { const key = i.menuId || i.name; remaining.set(key, (remaining.get(key) || 0) + Number(i.quantity)); });
+    const removedItems = entry.proposedItems ? entry.proposedItems.flatMap(i => {
+      const key = i.menuId || i.name, quantity = Number(i.quantity || 1), used = Math.min(remaining.get(key) || 0, quantity);
+      remaining.set(key, (remaining.get(key) || 0) - used);
+      return quantity > used ? [{ ...i, quantity: quantity - used }] : [];
+    }) : (entry.removedItems || []);
+    return { ...entry, total, removedItems, items: draft.items.map((i, index) => ({ ...i, orderIndex: index + 1, quantity: Number(i.quantity), unitPrice: Number(i.unitPrice), price: Number(i.unitPrice), subtotal: Number(i.unitPrice) * Number(i.quantity) })),
+      feedback: normalizeFeedback({ ...entry.feedback, satisfaction: draft.satisfaction, comment: draft.comment, updatedAt: new Date().toISOString() }),
+      cloudSave: { ...entry.cloudSave, state: 'pending', pendingAction: 'edit' } };
+  }
+
+  function openHistoryEditor(id) {
+    if (historyManagementBusy) return;
+    const entry = state.history.find(i => i.id === id && !i.deletedAt);
+    if (!entry) return;
+    historyEditDraft = { id, items: entry.items.map(i => ({ ...i })), original: JSON.stringify(entry) };
+    $('#historyEditRating').value = entry.feedback?.satisfaction || '';
+    $('#historyEditComment').value = entry.feedback?.comment || '';
+    $('#historyEditStatus').textContent = '';
+    $('#historyAddMenu').innerHTML = state.menu.filter(i => (i.storeId || DEFAULT_STORE_ID) === entry.storeId).map(i => `<option value="${escapeHtml(i.id)}">${escapeHtml(i.name)} (${yen(i.price)})</option>`).join('');
+    $('#historyAddLine').onclick = () => {
+      const item = state.menu.find(i => i.id === $('#historyAddMenu').value);
+      if (!item) return;
+      historyEditDraft.items.push({ lineId: uid('line'), menuId: item.id, name: item.name, category: item.category, quantity: 1, unitPrice: item.price, source: 'manual' });
+      renderHistoryEditLines();
+    };
+    $('#cancelHistoryEdit').onclick = () => { if (!historyManagementBusy) $('#historyEditDialog').close(); };
+    $('#historyEditDialog').oncancel = event => { if (historyManagementBusy) event.preventDefault(); };
+    $('#historyEditForm').onsubmit = saveHistoryEdit;
+    renderHistoryEditLines();
+    $('#historyEditDialog').showModal();
+  }
+
+  function renderHistoryEditLines() {
+    $('#historyEditLines').innerHTML = historyEditDraft.items.map((i, index) => `<div class="history-edit-line"><strong>${escapeHtml(i.name)}</strong><label>数量<input type="number" min="1" max="32767" step="1" required data-index="${index}" data-field="quantity" value="${i.quantity}"></label><label>注文時単価<input type="number" min="0" step="1" required data-index="${index}" data-field="unitPrice" value="${i.unitPrice ?? ''}"></label><button type="button" class="text-button" data-remove="${index}">外す</button></div>`).join('');
+    const updateTotal = () => { const total = historyEditTotal(historyEditDraft.items); $('#historyEditTotal').textContent = total === null ? '注文時単価・数量を確認してください（不明な価格は自動補完しません）' : `合計 ${yen(total)}`; };
+    $$('#historyEditLines input').forEach(input => input.oninput = () => { historyEditDraft.items[Number(input.dataset.index)][input.dataset.field] = input.value === '' ? null : Number(input.value); updateTotal(); });
+    $$('#historyEditLines [data-remove]').forEach(button => button.onclick = () => { historyEditDraft.items.splice(Number(button.dataset.remove), 1); renderHistoryEditLines(); });
+    updateTotal();
+  }
+
+  async function saveHistoryEdit(event) {
+    event.preventDefault();
+    if (historyManagementBusy) return;
+    const index = state.history.findIndex(i => i.id === historyEditDraft.id);
+    const old = state.history[index];
+    try {
+      if (!old || old.deletedAt || JSON.stringify(old) !== historyEditDraft.original) throw new Error('履歴が変更されています。閉じてから開き直してください。');
+      const updated = applyHistoryEdit(old, { ...historyEditDraft, satisfaction: $('#historyEditRating').value, comment: $('#historyEditComment').value });
+      state.history[index] = updated;
+      try { saveState(); } catch (error) { state.history[index] = old; throw error; }
+      historyManagementBusy = true;
+      $('#saveHistoryEdit').disabled = true;
+      $('#historyEditStatus').textContent = '端末では更新済み／クラウドへ保存中…';
+      const outcome = await saveHistoryToCloud(updated);
+      $('#historyEditDialog').close();
+      $('#historyManagementStatus').textContent = outcome.state === 'success' ? '注文履歴を更新しました。' : '端末では更新済み／クラウド更新失敗。再送できます。';
+      renderHistorySummary(); openHistoryDialog();
+    } catch (error) { $('#historyEditStatus').textContent = error.message; }
+    finally { historyManagementBusy = false; $('#saveHistoryEdit').disabled = false; }
+  }
+
+  async function deleteHistoryEntry(id) {
+    if (historyManagementBusy) return;
+    const entry = state.history.find(i => i.id === id && !i.deletedAt);
+    if (!entry || !window.confirm('この注文履歴を削除しますか？\n端末内履歴とクラウド履歴の両方に反映されます。\n焼酎残量履歴は別途残ります。')) return;
+    const old = { ...entry };
+    try {
+      entry.deletedAt = new Date().toISOString();
+      entry.cloudSave = { ...entry.cloudSave, state: 'pending', pendingAction: 'delete' };
+      try { saveState(); } catch (error) { Object.assign(entry, old); if (!old.deletedAt) delete entry.deletedAt; throw error; }
+      historyManagementBusy = true;
+      renderHistorySummary(); openHistoryDialog();
+      const result = await saveHistoryToCloud(entry);
+      $('#historyManagementStatus').textContent = result.state === 'success' ? '端末とクラウドの履歴を削除しました。' : '端末では削除済み／クラウド削除失敗。再送してください。';
+    } catch (error) { $('#historyManagementStatus').textContent = error.message; }
+    finally { historyManagementBusy = false; }
+  }
+
+  function planHistoryTransfer(entries, inventory, retry) {
+    const known = new Map(inventory.records.map(i => [i.id, i]));
+    let existing = 0, deletedInCloud = 0;
+    const confirmedDeletes = [];
+    const targets = [];
+    for (const entry of entries) {
+      if (entry.cloudSave?.ownerId && entry.cloudSave.ownerId !== inventory.user_id) throw new Error('別アカウントに保存した履歴が含まれます。元のアカウントでログインしてください。');
+      const remote = known.get(entry.id);
+      if (remote && remote.visit_id !== entry.visitId) throw new Error('履歴IDと来店IDの対応が一致しません。送信を中止しました。');
+      if (remote) existing++;
+      if (remote?.deleted_at) {
+        deletedInCloud++;
+        if (entry.deletedAt) confirmedDeletes.push(entry);
+        continue; // never resurrect cloud tombstones
+      }
+      if (retry && entry.cloudSave?.state !== 'saved' && (entry.deletedAt || entry.cloudSave?.pendingAction === 'edit' || entry.cloudSave?.state === 'failed')) targets.push(entry);
+      else if (!entry.deletedAt && !remote) targets.push(entry);
+    }
+    return { targets, existing, deletedInCloud, confirmedDeletes };
+  }
+
+  async function transferHistory(retry = false) {
+    if (historyManagementBusy) return;
+    historyManagementBusy = true;
+    const status = $('#historyManagementStatus');
+    try {
+      status.textContent = 'クラウドの履歴IDを確認しています…';
+      const entries = state.history.filter(i => (i.storeId || DEFAULT_STORE_ID) === getActiveStoreId());
+      const inventory = await window.HidakaSupabase.readHistoryInventory(entries.map(i => i.id));
+      const plan = planHistoryTransfer(entries, inventory, retry);
+      plan.confirmedDeletes.forEach(entry => { entry.cloudSave = { state: 'saved', ownerId: inventory.user_id, savedAt: new Date().toISOString() }; });
+      if (plan.confirmedDeletes.length) saveState();
+      const deletedNote = plan.deletedInCloud ? ` クラウド削除済み ${plan.deletedInCloud}件は再送しません。` : '';
+      if (!plan.targets.length) { status.textContent = `未送信履歴はありません（クラウド登録済み ${plan.existing}件）。${deletedNote}`; return; }
+      if (!window.confirm(`対象 ${plan.targets.length}件／クラウド登録済み ${plan.existing}件\n${retry ? '更新・削除の失敗分も含めて再送' : '未登録の過去履歴を送信'}しますか？`)) { status.textContent = '送信をキャンセルしました。'; return; }
+      let success = 0, failed = 0, skipped = 0;
+      for (const entry of plan.targets) {
+        entry.cloudSave = { ...entry.cloudSave, ownerId: inventory.user_id, pendingAction: entry.deletedAt ? 'delete' : (entry.cloudSave?.pendingAction || (retry && entry.cloudSave?.state === 'failed' ? 'save' : 'import')) };
+        const result = await saveHistoryToCloud(entry);
+        if (result.alreadyExists) skipped++; else if (result.state === 'success') success++; else failed++;
+        status.textContent = `成功 ${success}件・失敗 ${failed}件／対象 ${plan.targets.length}件`;
+      }
+      status.textContent += `（送信前の登録済み ${plan.existing}件・送信時に登録済み ${skipped}件）。失敗分は再送できます。${deletedNote}`;
+      openHistoryDialog();
+    } catch (error) { status.textContent = friendlyCloudError(error); }
+    finally { historyManagementBusy = false; }
+  }
+
   function openHistoryDialog() {
+    $('#uploadOldHistory').onclick = () => transferHistory(false);
+    $('#retryHistory').onclick = () => transferHistory(true);
     const history = sortedHistory();
     const list = $('#historyList');
     if (!history.length) {
@@ -1474,6 +1624,14 @@ function emailOtpError(error){
         return `<article class="history-entry"><div class="history-entry-header"><strong>${escapeHtml(entry.date)}${index === 0 ? '（前回）' : ''}</strong><span>${summary}</span></div><ol>${items}</ol>${feedbackBlock}<button class="text-button edit-feedback" type="button" data-history-id="${escapeHtml(entry.id)}">${hasFeedback(entry.feedback) ? '感想を編集' : '感想を入力'}</button></article>`;
       }).join('');
       $$('.edit-feedback', list).forEach(button => button.addEventListener('click', () => openFeedbackDialog(button.dataset.historyId, true)));
+      $$('.history-entry', list).forEach((card, index) => {
+        const actions = document.createElement('div'); actions.className = 'history-card-actions';
+        actions.append($('.edit-feedback', card));
+        const row = document.createElement('div'); row.className = 'history-card-actions-row';
+        const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'text-button'; edit.textContent = '編集'; edit.onclick = () => openHistoryEditor(history[index].id); row.append(edit);
+        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'text-button history-card-delete'; remove.textContent = '削除'; remove.onclick = () => deleteHistoryEntry(history[index].id); row.append(remove);
+        actions.append(row); card.append(actions);
+      });
     }
     const dialog = $('#historyDialog');
     if (!dialog.open) dialog.showModal();

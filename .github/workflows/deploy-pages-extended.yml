@@ -35,6 +35,11 @@ jobs:
           node scripts/test-supabase-auth.mjs
           node scripts/test-shochu-keep-readonly.mjs
           node scripts/test-pages-build.mjs
+          node scripts/test-history-management.mjs
+          node scripts/test-direct-order-history.mjs
+          node scripts/test-order-cloud-transport.mjs
+          node scripts/test-haraken-navi-readonly.mjs
+          node scripts/test-order-reduction.mjs
           node scripts/build-pages.mjs
 
       - name: Upload GitHub Pages artifact

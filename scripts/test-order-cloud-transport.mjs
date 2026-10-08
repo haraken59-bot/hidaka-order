@@ -14,7 +14,8 @@ async function harness(loggedIn=true, fail=false) {
     if(url.endsWith('/auth/v1/health')) return response({});
     if(url.endsWith('/auth/v1/user')) return response({id:'owner',email:'test@example.test'});
     if(url.includes('/app_store_links?')) return response([{store_id:'112e03a4-8d7f-41f4-9984-d39536398f11'}]);
-    if(url.includes('/rpc/save_hidaka_order_history')) {
+    if(url.includes('/rpc/list_hidaka_order_history')) return response({user_id:'owner',records:[]});
+    if(url.includes('/rpc/save_hidaka_order_history') || url.includes('/rpc/manage_hidaka_order_history')) {
       if(fail) throw new Error('offline');
       return response({id:JSON.parse(options.body).p_order.id,user_id:'owner',saved_at:'2026-10-01T00:00:00Z'});
     }
@@ -39,4 +40,9 @@ const out=await harness(false);
 await assert.rejects(()=>out.api.saveOrderHistory(record),/ログイン/);
 const failed=await harness(true,true);
 await assert.rejects(()=>failed.api.saveOrderHistory(record),/offline/);
+await h.api.saveOrderHistory({...record, operation:'edit'});
+assert.equal(h.calls.filter(c=>c.url.includes('/rpc/manage_hidaka_order_history')).length,1);
+await h.api.readHistoryInventory(Array.from({length:205},(_,i)=>'h'+i));
+assert.equal(h.calls.filter(c=>c.url.includes('/rpc/list_hidaka_order_history')).length,3);
+await assert.rejects(()=>out.api.readHistoryInventory(['h']),/ログイン/);
 console.log('Order cloud transport: explicit save only, owner/store checks, offline and logged-out passed');

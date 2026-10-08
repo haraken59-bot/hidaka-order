@@ -137,6 +137,11 @@ dialog { border:0; border-radius:18px; padding:0; width:min(600px,calc(100% - 24
 .history-feedback p { margin:4px 0 0; color:#4d6256; font-size:12px; white-space:pre-wrap; }
 .history-feedback-empty { margin:9px 0 4px; color:var(--muted); font-size:11px; }
 .edit-feedback { margin-top:5px; }
+.history-card-actions { display:grid; gap:12px; margin-top:14px; }
+.history-card-actions-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:24px; }
+.history-card-actions .text-button { min-height:48px; min-width:0; padding:12px; margin:0; border:1px solid var(--line); border-radius:8px; background:#fff; font-size:14px; text-decoration:none; }
+.history-card-actions .history-card-delete { color:#7b5650; border-style:dashed; }
+.history-card-actions .text-button:focus-visible { outline:3px solid var(--red); outline-offset:2px; }
 @media (max-width:480px) {
   .order-item { align-items:flex-start; gap:8px; }
   .order-number { margin-top:2px; }
@@ -147,3 +152,12 @@ dialog { border:0; border-radius:18px; padding:0; width:min(600px,calc(100% - 24
 .removed-order-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; font-size: .85rem; color: #726962; }
 .removed-order-item span { min-width: 0; overflow-wrap: anywhere; }
 .restore-order-item { flex-shrink: 0; }
+/* 履歴編集：スマホでは商品名と数値入力を折り返す */
+.history-edit-line { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 0; border-bottom:1px solid #ddd; }
+.history-edit-line > strong { flex:1 0 100%; }
+.history-edit-line label { font-size: .85rem; }
+.history-edit-line input { width:90px; max-width:100%; }
+#historyEditForm { min-width:0; width:100%; }
+#historyEditForm .dialog-content { min-width:0; overflow-wrap:anywhere; }
+#historyEditForm select, #historyEditForm textarea { display:block; box-sizing:border-box; width:100%; max-width:100%; min-width:0; }
+#historyEditForm .history-edit-line label { display:flex; align-items:center; gap:6px; margin:0; }
