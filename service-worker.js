@@ -1,5 +1,5 @@
-const CACHE_NAME = 'hidaka-order-pwa-v47-icon-padding';
-const APP_ASSETS = [
+const CACHE_NAME = 'hidaka-order-pwa-icons-20261011';
+const APP_ASSETS = ["./icons/icon-192-v20261011.png","./icons/icon-512-v20261011.png","./icons/icon-maskable-192-v20261011.png","./icons/icon-maskable-512-v20261011.png",
   './',
   './index.html',
   './styles.css',

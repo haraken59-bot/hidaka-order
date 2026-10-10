@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const PUBLIC_FILES = Object.freeze([
+"icons/icon-192-v20261011.png","icons/icon-512-v20261011.png","icons/icon-maskable-192-v20261011.png","icons/icon-maskable-512-v20261011.png",
   'index.html', 'app.js', 'styles.css', 'supabase-connection.js',
   'service-worker.js', 'manifest.webmanifest',
   'data/stores.json', 'data/hidaka-menu.csv',
