@@ -358,6 +358,29 @@
     return result;
   }
 
+  async function readOrderHistory(localStoreId) {
+    const config = requireConfig();
+    if (localStoreId !== config.legacyStoreId) throw new Error('現在の店舗はクラウド接続先と一致しません。');
+    const session = await getFreshSession();
+    if (!session) throw new Error('クラウドへログインしてください。');
+    const user = await readAuthenticatedUser(session);
+    if (!user.id || !await verifyStoreLink(session)) throw new Error('本人・店舗の対応を確認できません。');
+    const records = [];
+    for (let offset = 0; ; offset += 100) {
+      assertActiveSession(session);
+      const query = new URLSearchParams({ select: 'id,order_history_id,user_id,store_id,visited_at,recorded_at,total_amount,order_snapshot,deleted_at', user_id: `eq.${user.id}`, store_id: `eq.${config.supabaseStoreId}`, deleted_at: 'is.null', order: 'visited_at.desc,id.asc', limit: '100', offset: String(offset) });
+      const response = await authenticatedFetch(`/rest/v1/visits?${query}`, session, { method: 'GET', signal: AbortSignal.timeout(15000) });
+      const rows = await response.json();
+      if (!Array.isArray(rows) || rows.some(row => row.user_id !== user.id || row.store_id !== config.supabaseStoreId)) throw new Error('履歴の本人・店舗が一致しません。');
+      records.push(...rows.filter(row => row.deleted_at === null));
+      if (rows.length < 100) break;
+    }
+    assertActiveSession(session);
+    const finalUser = await readAuthenticatedUser(session);
+    if (finalUser.id !== user.id) throw new Error('取得中に利用者が変わりました。');
+    return { user_id: user.id, records };
+  }
+
   async function readHistoryInventory(ids) {
     const config = requireConfig();
     const session = await getFreshSession();
@@ -755,6 +778,7 @@
     readHarakenNaviContext,
     saveOrderHistory,
     readHistoryInventory,
+    readOrderHistory,
     updateShochuKeepRemaining,
     saveManualBackup,
     confirmBackupOwner,

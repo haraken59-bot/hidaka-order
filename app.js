@@ -15,7 +15,7 @@ function emailOtpError(error){
   const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
   const DATA_SCHEMA_VERSION = 6;
-  const APP_VERSION = '1.21.0';
+  const APP_VERSION = '1.21.1-rc.1';
   const BEFORE_CLOUD_RESTORE_KEY = 'hidaka-order-before-cloud-restore-v1';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-09-04-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-04';
@@ -545,6 +545,9 @@ function emailOtpError(error){
       saveState();
     });
     window.addEventListener('hidaka:supabase-status', event => {
+      cloudHistoryView = { state: '未取得', storeId: '', records: [], request: cloudHistoryView.request + 1 };
+      renderHistorySummary();
+      if ($('#historyDialog').open) openHistoryDialog();
       renderSupabaseStatus(event.detail);
       void refreshShochuKeepStatus(event.detail);
     });
@@ -1360,12 +1363,43 @@ function emailOtpError(error){
     renderOrder(currentOrder);
   }
 
+  let cloudHistoryView = { state: '未取得', storeId: '', records: [], request: 0 };
+
+  function cloudOnlyHistory() {
+    if (cloudHistoryView.storeId !== getActiveStoreId()) return [];
+    const ids = new Set(state.history.map(entry => entry.id));
+    return cloudHistoryView.records.filter(row => {
+      if (row.deleted_at || ids.has(row.order_history_id)) return false;
+      ids.add(row.order_history_id); return true;
+    });
+  }
+
+  async function displayCloudHistory() {
+    const storeId = getActiveStoreId();
+    const request = cloudHistoryView.request + 1;
+    cloudHistoryView = { state: '取得中', storeId, records: [], request };
+    renderHistorySummary();
+    try {
+      const result = await window.HidakaSupabase.readOrderHistory(storeId);
+      if (request !== cloudHistoryView.request || storeId !== getActiveStoreId()) return;
+      cloudHistoryView.records = result.records;
+      cloudHistoryView.state = `取得済み・${result.records.length}件`;
+      renderHistorySummary(); openHistoryDialog();
+    } catch (error) {
+      if (request !== cloudHistoryView.request) return;
+      cloudHistoryView.state = `取得失敗：${friendlyCloudError(error)}`;
+      renderHistorySummary();
+    }
+  }
+
   function renderHistorySummary() {
     const history = sortedHistory();
-    if (!history.length) { $('#historySummary').innerHTML = '<h2>注文履歴</h2><p>まだ履歴はありません。注文を記録すると、次回は食べたばかりの料理を避けられます。</p>'; return; }
+    const cloudCount = cloudOnlyHistory().length;
+    const cloudState = cloudHistoryView.storeId === getActiveStoreId() ? cloudHistoryView.state : '未取得';
     const latest = history[0];
-    $('#historySummary').innerHTML = `<h2>前回の注文 <span>(${escapeHtml(latest.date)})</span></h2><p>${latest.items.map(item => escapeHtml(item.name)).join('・')}</p><button class="text-button history-open-button" type="button" id="viewHistory">すべての履歴を見る（${history.length}件）</button>`;
-    $('#viewHistory').addEventListener('click', openHistoryDialog);
+    $('#historySummary').innerHTML = (latest ? `<h2>前回の注文 <span>(${escapeHtml(latest.date)})</span></h2><p>${latest.items.map(item => escapeHtml(item.name)).join('・')}</p>` : '<h2>注文履歴</h2><p>この端末には履歴がありません。</p>') + `<p role="status">クラウド：${escapeHtml(cloudState)}</p><button class="text-button" id="loadCloudHistory" type="button" ${cloudState === '取得中' ? 'disabled' : ''}>クラウドの注文履歴を表示</button><button class="text-button history-open-button" type="button" id="viewHistory">すべての履歴を見る（${history.length + cloudCount}件）</button>`;
+    $('#viewHistory').onclick = openHistoryDialog;
+    $('#loadCloudHistory').onclick = displayCloudHistory;
   }
 
   const FEEDBACK_REPEAT_LABEL = { again: 'また頼みたい', avoid: '次回は避けたい', none: '特になし' };
@@ -1634,6 +1668,16 @@ function emailOtpError(error){
       });
     }
     const dialog = $('#historyDialog');
+    const cloudRows = cloudOnlyHistory();
+    if (cloudRows.length) {
+      if (!history.length) list.innerHTML = '';
+      list.insertAdjacentHTML('beforeend', '<h3>クラウド履歴（参照専用・端末保存なし）</h3>' + cloudRows.map(row => {
+        const snapshot = row.order_snapshot || {};
+        const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+        const date = row.visited_at ? new Date(row.visited_at).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '日付未設定';
+        return `<article class="history-entry"><strong>${escapeHtml(date)}</strong><p>${row.total_amount == null ? '金額記録なし' : yen(row.total_amount)}</p><ol>${items.map(item => `<li>${escapeHtml(item.name || '商品名未設定')} ×${escapeHtml(String(item.quantity ?? 1))}</li>`).join('')}</ol>${!items.length ? '<p>商品明細未保存</p>' : ''}<p>${escapeHtml(snapshot.feedback?.comment || '')}</p></article>`;
+      }).join(''));
+    }
     if (!dialog.open) dialog.showModal();
   }
 
