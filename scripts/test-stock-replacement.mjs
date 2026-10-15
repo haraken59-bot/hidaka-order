@@ -39,7 +39,7 @@ assert.deepEqual(Array.from(test.getState().menu[0].seasons), ['spring', 'summer
 assert.equal(test.getState().menu[0].availableFrom, '2026-03-01');
 const normalizedStore = test.normalizeStore({ 店舗ID: 'hidaka-001', 店名: 'やきとり日高', エリア: '', メモ: '' });
 assert.equal(normalizedStore.id, 'hidaka-001');
-assert.equal(normalizedStore.name, 'やきとり日高');
+assert.equal(normalizedStore.name, 'やきとり ひだか');
 assert.equal(normalizedStore.area, '');
 assert.equal(normalizedStore.memo, '');
 assert.equal(test.normalizeStores([{ id: 'duplicate', name: '店舗1' }, { id: 'duplicate', name: '店舗2' }]).length, 0);
@@ -460,7 +460,7 @@ delete legacyBackup.source.storeId;
 const restoredLegacyBackup = test.normalizeFullBackup(legacyBackup);
 assert.equal(restoredLegacyBackup.state.activeStoreId, 'hidaka-001');
 assert.equal(restoredLegacyBackup.state.dataSchemaVersion, 6);
-assert.equal(restoredLegacyBackup.state.stores[0].name, 'やきとり日高');
+assert.equal(restoredLegacyBackup.state.stores[0].name, 'やきとり ひだか');
 assert.equal(restoredLegacyBackup.state.menuSortMode, 'tag');
 assert.throws(() => test.normalizeFullBackup({ format: 'unknown', schemaVersion: 1, data: {} }), /完全バックアップではありません/);
 assert.throws(() => test.normalizeFullBackup({ ...fullBackup, schemaVersion: 7 }), /未対応/);
