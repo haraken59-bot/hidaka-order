@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hidaka-order-cloud-history-1.21.1-rc1';
+const CACHE_NAME = 'hidaka-order-cloud-history-1.21.1';
 const APP_ASSETS = ["./icons/icon-192-v20261011.png","./icons/icon-512-v20261011.png","./icons/icon-maskable-192-v20261011.png","./icons/icon-maskable-512-v20261011.png",
   './',
   './index.html',

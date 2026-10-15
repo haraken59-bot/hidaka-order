@@ -15,7 +15,7 @@ function emailOtpError(error){
   const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
   const DATA_SCHEMA_VERSION = 6;
-  const APP_VERSION = '1.21.1-rc.1';
+  const APP_VERSION = '1.21.1';
   const BEFORE_CLOUD_RESTORE_KEY = 'hidaka-order-before-cloud-restore-v1';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-09-04-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-04';
