@@ -212,7 +212,7 @@
 
   async function readCloudCounts(session) {
     const config = requireConfig();
-    if (!await verifyStoreLink(session)) throw new Error('このログインでは、やきとり日高のデータを確認できません。');
+    if (!await verifyStoreLink(session)) throw new Error('このログインでは、やきとり ひだかのデータを確認できません。');
     const storeFilter = { store_id: `eq.${config.supabaseStoreId}` };
     const [menuItems, visits, storeSettings] = await Promise.all([
       countRows('menu_items', { ...storeFilter, deleted_at: 'is.null' }, session),
@@ -251,7 +251,7 @@
     const session = await getFreshSession();
     if (!session) throw new Error('先にクラウドへログインしてください。');
     const user = await readAuthenticatedUser(session);
-    if (!user.id || !await verifyStoreLink(session)) throw new Error('このログインでは、やきとり日高のデータを確認できません。');
+    if (!user.id || !await verifyStoreLink(session)) throw new Error('このログインでは、やきとり ひだかのデータを確認できません。');
 
     const storeQuery = new URLSearchParams({ select: 'id,name', id: `eq.${config.supabaseStoreId}`, limit: '1' });
     const bottleQuery = new URLSearchParams({
@@ -322,7 +322,7 @@
     const session = await getFreshSession();
     if (!session) throw new Error('先にクラウドへログインしてください。');
     const user = await readAuthenticatedUser(session);
-    if (!user.id || !await verifyStoreLink(session)) throw new Error('このログインでは、やきとり日高のデータを確認できません。');
+    if (!user.id || !await verifyStoreLink(session)) throw new Error('このログインでは、やきとり ひだかのデータを確認できません。');
     const response = await authenticatedFetch('/rest/v1/rpc/get_hidaka_ai_context', session, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -392,7 +392,7 @@
     if (!validUuid(normalizedBottleId)) throw new Error('更新するボトルを確認できません。');
     if (!Number.isInteger(remaining) || remaining < 0 || remaining > 100) throw new Error('残量は0〜100%で指定してください。');
     const user = await readAuthenticatedUser(session);
-    if (!user.id || !await verifyStoreLink(session)) throw new Error('このログインでは、やきとり日高のデータを確認できません。');
+    if (!user.id || !await verifyStoreLink(session)) throw new Error('このログインでは、やきとり ひだかのデータを確認できません。');
 
     const bottleQuery = new URLSearchParams({
       select: 'id,store_id,current_remaining,status',
@@ -440,7 +440,7 @@
     const session = await getFreshSession();
     if (!session) throw new Error('先にクラウドへログインしてください。');
     const user = await readAuthenticatedUser(session);
-    if (!user.id || !await verifyStoreLink(session)) throw new Error('このログインでは、やきとり日高のデータを確認できません。');
+    if (!user.id || !await verifyStoreLink(session)) throw new Error('このログインでは、やきとり ひだかのデータを確認できません。');
     assertActiveSession(session);
     return { config, session, user };
   }

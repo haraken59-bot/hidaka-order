@@ -21,7 +21,7 @@ function emailOtpError(error){
   const MENU_DATA_UPDATED_AT = '2026-09-04';
   const FALLBACK_MENU_VERSION = 'fallback-menu-v1';
   const DEFAULT_STORE_ID = 'hidaka-001';
-  const FALLBACK_STORE = { id: DEFAULT_STORE_ID, name: 'やきとり日高', area: '', memo: '' };
+  const FALLBACK_STORE = { id: DEFAULT_STORE_ID, name: 'やきとり ひだか', area: '', memo: '' };
   const CATEGORY_LABEL = { drink: 'お酒', small: '小皿・つまみ', skewer: '串', main: '一品', finish: '締め', dessert: 'デザート', fee: '割代' };
   const OFFERING_TYPE_LABEL = { regular: '通常', seasonal: '季節', limited: '期間限定' };
   const SEASON_LABEL = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' };
@@ -211,7 +211,7 @@ function emailOtpError(error){
     const id = String(raw.id ?? raw.storeId ?? raw['店舗ID'] ?? '').trim();
     const name = String(raw.name ?? raw['店名'] ?? raw['店舗名'] ?? '').trim();
     if (!id || !name) return null;
-    return { id, name, area: String(raw.area ?? raw['エリア'] ?? '').trim(), memo: String(raw.memo ?? raw['メモ'] ?? '').trim() };
+    return { id, name: name === 'やきとり日高' ? 'やきとり ひだか' : name, area: String(raw.area ?? raw['エリア'] ?? '').trim(), memo: String(raw.memo ?? raw['メモ'] ?? '').trim() };
   }
   function normalizeStores(raw) {
     const rows = Array.isArray(raw) ? raw : (Array.isArray(raw?.stores) ? raw.stores : []);
@@ -2090,14 +2090,14 @@ function emailOtpError(error){
     return `${rows.map(row => row.map(csvCell).join(',')).join('\n')}\n`;
   }
   function downloadCurrentMenuBackup() {
-    download(`やきとり日高_メニューバックアップ_${todayKey()}.csv`, buildMenuCsv(state.menu));
+    download(`やきとり ひだか_メニューバックアップ_${todayKey()}.csv`, buildMenuCsv(state.menu));
     $('#exportStatus').textContent = `現在のメニュー ${state.menu.length}品をCSVに保存しました。`;
   }
   async function downloadDefaultMenu() {
     try {
       const response = await fetch('./data/hidaka-menu.csv', { cache: 'no-cache' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      download('やきとり日高_メニュー.csv', await response.text());
+      download('やきとり ひだか_メニュー.csv', await response.text());
       $('#exportStatus').textContent = '基本メニューCSVを保存しました。';
     } catch (error) {
       $('#exportStatus').textContent = `基本メニューCSVを保存できませんでした: ${error.message}`;
@@ -2182,7 +2182,7 @@ function emailOtpError(error){
     container.replaceChildren(...(summary ? [summary, list] : [list]));
     container.className = 'shochu-keep-card is-success';
     container.setAttribute('aria-busy', 'false');
-    container.title = `${result.storeName || 'やきとり日高'}の焼酎キープ参照情報です。`;
+    container.title = `${result.storeName || 'やきとり ひだか'}の焼酎キープ参照情報です。`;
     renderPendingShochuRemainingFields();
   }
 
