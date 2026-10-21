@@ -1,7 +1,8 @@
-const CACHE_NAME = 'hidaka-order-cloud-history-1.21.1';
+const CACHE_NAME = 'hidaka-order-yakitori-20261022';
 const APP_ASSETS = ["./icons/icon-192-v20261011.png","./icons/icon-512-v20261011.png","./icons/icon-maskable-192-v20261011.png","./icons/icon-maskable-512-v20261011.png",
   './',
   './index.html',
+  './icons/yakitori.svg',
   './styles.css',
   './supabase-connection.js',
   './app.js',

@@ -1163,7 +1163,7 @@ function emailOtpError(error){
     if (pendingDialog.open) pendingDialog.close();
     saveState();
     applyPreferences();
-    $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>つまみの量と食べたいものから、バランスよく選びます。</p></div>';
+    $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration"><img src="icons/yakitori.svg" width="84" height="56" alt="焼き鳥とねぎまの串" /></span><h2>条件を選んで注文案を作ろう</h2><p>つまみの量と食べたいものから、バランスよく選びます。</p></div>';
     $('#preferenceForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -2016,7 +2016,7 @@ function emailOtpError(error){
       renderOrder(currentOrder, false);
       schedulePendingReminder();
     } else {
-      $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>つまみの量と食べたいものから、バランスよく選びます。</p></div>';
+      $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration"><img src="icons/yakitori.svg" width="84" height="56" alt="焼き鳥とねぎまの串" /></span><h2>条件を選んで注文案を作ろう</h2><p>つまみの量と食べたいものから、バランスよく選びます。</p></div>';
     }
   }
 
@@ -2154,7 +2154,7 @@ function emailOtpError(error){
     const initialMenu = cloneMenu(state.initialMenu?.length ? state.initialMenu : base.initialMenu);
     state = { ...base, menu: initialMenu, initialMenu: cloneMenu(initialMenu) }; currentOrder = null; saveState(); renderMoodChoices(); applyPreferences(); renderMenuEditor(); renderHistorySummary();
     $('#dataDialog').close();
-    $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration">🍢</span><h2>条件を選んで注文案を作ろう</h2><p>つまみの量と食べたいものから、バランスよく選びます。</p></div>';
+    $('#result').innerHTML = '<div class="empty-state"><span class="empty-illustration"><img src="icons/yakitori.svg" width="84" height="56" alt="焼き鳥とねぎまの串" /></span><h2>条件を選んで注文案を作ろう</h2><p>つまみの量と食べたいものから、バランスよく選びます。</p></div>';
   }
 
   function registerInitialMenu() {
