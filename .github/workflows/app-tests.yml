@@ -1,0 +1,35 @@
+name: App tests (no deployment)
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'app.js'
+      - 'supabase-connection.js'
+      - 'scripts/**'
+      - 'data/**'
+      - '.github/workflows/app-tests.yml'
+permissions:
+  contents: read
+jobs:
+  tests:
+    name: Node.js regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: |
+          node --check app.js
+          node --check supabase-connection.js
+      - name: Run all existing Node.js regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test_file in scripts/test-*.mjs; do
+            echo "::group::${test_file}"
+            node "${test_file}"
+            echo "::endgroup::"
+          done
