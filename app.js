@@ -15,7 +15,7 @@ function emailOtpError(error){
   const FULL_BACKUP_SCHEMA_VERSION = 6;
   const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
   const DATA_SCHEMA_VERSION = 6;
-  const APP_VERSION = '1.21.1';
+  const APP_VERSION = '1.22.0';
   const BEFORE_CLOUD_RESTORE_KEY = 'hidaka-order-before-cloud-restore-v1';
   const DEFAULT_MENU_VERSION = 'hidaka-menu-2026-09-04-v1';
   const MENU_DATA_UPDATED_AT = '2026-09-04';
@@ -725,6 +725,28 @@ function emailOtpError(error){
     saveState();
   }
 
+  const MENU_CATEGORY_ORDER = ['skewer', 'small', 'main', 'finish', 'dessert', 'drink', 'fee'];
+
+  function buildGroupedMenuOptions(items, labelForItem) {
+    const unknown = items.find(item => !MENU_CATEGORY_ORDER.includes(item.category));
+    if (unknown) throw new Error(`未知のカテゴリの商品があります: ${unknown.category}`);
+    const nodes = [];
+    for (const category of MENU_CATEGORY_ORDER) {
+      const groupItems = items.filter(item => item.category === category);
+      if (!groupItems.length) continue;
+      const group = document.createElement('optgroup');
+      group.label = CATEGORY_LABEL[category];
+      group.replaceChildren(...groupItems.map(item => {
+        const option = document.createElement('option');
+        option.value = item.id;
+        option.textContent = labelForItem(item);
+        return option;
+      }));
+      nodes.push(group);
+    }
+    return nodes;
+  }
+
   function renderDrinkOptions(selectedValue) {
     const select = $('#drink');
     const drinks = state.menu.filter(item => isMenuAvailable(item) && item.category === 'drink');
@@ -732,13 +754,10 @@ function emailOtpError(error){
     const directMatch = drinks.find(item => item.id === currentValue);
     const legacyMatch = drinks.find(item => matchesSelectedDrink(item, currentValue));
     const value = directMatch?.id || legacyMatch?.id || 'none';
-    const choices = [{ value: 'none', label: 'なし' }, ...drinks.map(item => ({ value: item.id, label: `${item.name}（${yen(item.price)}）` }))];
-    select.replaceChildren(...choices.map(choice => {
-      const option = document.createElement('option');
-      option.value = choice.value;
-      option.textContent = choice.label;
-      return option;
-    }));
+    const noneOption = document.createElement('option');
+    noneOption.value = 'none';
+    noneOption.textContent = 'なし';
+    select.replaceChildren(noneOption, ...buildGroupedMenuOptions(drinks, item => `${item.name}（${yen(item.price)}）`));
     select.value = value;
     return value;
   }
@@ -1303,12 +1322,7 @@ function emailOtpError(error){
     const excludedIds = new Set(getTodayOutOfStockIds());
     const choices = state.menu.filter(item => isMenuAvailable(item) && !excludedIds.has(item.id));
     const select = $('#additionalItem');
-    select.replaceChildren(...choices.map(item => {
-      const option = document.createElement('option');
-      option.value = item.id;
-      option.textContent = `${item.name}（${yen(item.price)}）`;
-      return option;
-    }));
+    select.replaceChildren(...buildGroupedMenuOptions(choices, item => `${item.name}（${yen(item.price)}）`));
     $('#addOrderStatus').textContent = choices.length ? '追加額は注文合計にのみ反映されます。' : '追加できる商品がありません。';
     $('#confirmOrderAddition').disabled = choices.length === 0;
     $('#addToOrderDialog').showModal();
@@ -1333,12 +1347,7 @@ function emailOtpError(error){
     const excludedIds = new Set(getTodayOutOfStockIds());
     const choices = state.menu.filter(item => isMenuAvailable(item) && !excludedIds.has(item.id) && item.id !== original.id);
     const select = $('#replacementItem');
-    select.replaceChildren(...choices.map(item => {
-      const option = document.createElement('option');
-      option.value = item.id;
-      option.textContent = `${item.name}（${CATEGORY_LABEL[item.category]}・${yen(item.price)}）`;
-      return option;
-    }));
+    select.replaceChildren(...buildGroupedMenuOptions(choices, item => `${item.name}（${CATEGORY_LABEL[item.category]}・${yen(item.price)}）`));
     $('#changeSourceItem').textContent = `${original.name}（${yen(original.price)}）`;
     $('#orderChangeReason').value = '';
     $('#changeOrderStatus').textContent = choices.length ? '品切れには登録されず、今回の注文だけを変更します。' : '変更先に選べる商品がありません。';
@@ -1520,7 +1529,7 @@ function emailOtpError(error){
     $('#historyEditRating').value = entry.feedback?.satisfaction || '';
     $('#historyEditComment').value = entry.feedback?.comment || '';
     $('#historyEditStatus').textContent = '';
-    $('#historyAddMenu').innerHTML = state.menu.filter(i => (i.storeId || DEFAULT_STORE_ID) === entry.storeId).map(i => `<option value="${escapeHtml(i.id)}">${escapeHtml(i.name)} (${yen(i.price)})</option>`).join('');
+    $('#historyAddMenu').replaceChildren(...buildGroupedMenuOptions(state.menu.filter(i => (i.storeId || DEFAULT_STORE_ID) === entry.storeId), item => `${item.name} (${yen(item.price)})`));
     $('#historyAddLine').onclick = () => {
       const item = state.menu.find(i => i.id === $('#historyAddMenu').value);
       if (!item) return;
